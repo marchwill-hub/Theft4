@@ -26,6 +26,9 @@ jobs:
     timeout-minutes: 420
     env:
       DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
+      # Flip to "true" to attempt the optional MoltenVK capability gate
+      # (Xcode build of the submodule; see the MoltenVK step below).
+      MVK_ATTEMPT: "false"
 
     steps:
       - name: Checkout
@@ -81,7 +84,7 @@ jobs:
           key: mvk-ios-${{ hashFiles('thirdparty/MoltenVK/MoltenVK/CMakeLists.txt', 'thirdparty/MoltenVK/SPIRV-Cross/CMakeLists.txt', 'glue/rexglue-sdk-main/thirdparty/spirv-tools/CMakeLists.txt') }}
 
       - name: MoltenVK iOS static libs (best effort)
-        if: steps.mvk.outputs.cache-hit != 'true'
+        if: steps.mvk.outputs.cache-hit != 'true' && env.MVK_ATTEMPT == 'true'
         run: |
           # The MoltenVK archive feeds the optional Vulkan device capability
           # gate; the 0.3 Metal backend does not require it. The submodule's
@@ -90,10 +93,10 @@ jobs:
           # without the capability gate.
           ok=1
           if [ -x thirdparty/MoltenVK/MoltenVK/fetchDependencies ]; then
-            (cd thirdparty/MoltenVK/MoltenVK && ./fetchDependencies) || ok=0
+            (cd thirdparty/MoltenVK/MoltenVK && ./fetchDependencies --ios) || ok=0
           fi
           if [ $ok -eq 1 ]; then
-            xcodebuild -project thirdparty/MoltenVK/MoltenVK/MoltenVK.xcodeproj \
+            xcodebuild -project thirdparty/MoltenVK/MoltenVK/MoltenVK/MoltenVK.xcodeproj \
               -target MoltenVK-iOS-static \
               -target MoltenVKShaderConverter-iOS \
               -sdk iphoneos -configuration Release ARCHS=arm64 \

@@ -474,15 +474,20 @@ if(THEFT4_ENABLE_GAME_STARTUP)
         CACHE PATH "Optional XeniOS generated shader directory for direct resolve experiments")
     option(THEFT4_ENABLE_XENIOS_DIRECT_RESOLVE
            "Build the experimental XeniOS-derived direct host resolve path" OFF)
+    # The Vulkan UI/graphics closure above is always compiled into the
+    # bridge (inert until the runtime constructs VulkanCommandProcessor),
+    # so its header-only dependencies are always available. Linking the
+    # MoltenVK archives and enabling the device capability probe remain
+    # conditional on the XeniOS archives being present.
+    target_include_directories(theft4_core_bridge PRIVATE
+        "${CMAKE_SOURCE_DIR}/glue/rexglue-sdk-main/thirdparty/vulkan-headers/include"
+        "${CMAKE_SOURCE_DIR}/glue/rexglue-sdk-main/thirdparty/vulkan-memory-allocator/include"
+        "${CMAKE_SOURCE_DIR}/glue/rexglue-sdk-main/thirdparty/glslang"
+        "${CMAKE_SOURCE_DIR}/glue/rexglue-sdk-main/thirdparty/renderdoc")
     if(EXISTS "${THEFT4_XENIOS_IOS_LIB_DIR}/libMoltenVK.a")
         target_sources(theft4_core_bridge PRIVATE
             bridge/theft4_vulkan_probe.cpp
             bridge/theft4_rex_vulkan_gate.cpp)
-        target_include_directories(theft4_core_bridge PRIVATE
-            "${CMAKE_SOURCE_DIR}/glue/rexglue-sdk-main/thirdparty/vulkan-headers/include"
-            "${CMAKE_SOURCE_DIR}/glue/rexglue-sdk-main/thirdparty/vulkan-memory-allocator/include"
-            "${CMAKE_SOURCE_DIR}/glue/rexglue-sdk-main/thirdparty/glslang"
-            "${CMAKE_SOURCE_DIR}/glue/rexglue-sdk-main/thirdparty/renderdoc")
         target_compile_definitions(theft4_core_bridge PRIVATE
             THEFT4_HAS_MOLTENVK_PROBE=1
             REX_HAS_VULKAN=1)
