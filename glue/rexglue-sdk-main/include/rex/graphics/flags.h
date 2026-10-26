@@ -77,7 +77,10 @@ REXCVAR_DECLARE(std::string, trace_gpu_prefix);
 REXCVAR_DECLARE(bool, trace_gpu_stream);
 REXCVAR_DECLARE(std::string, swap_post_effect);
 
-#if REX_HAS_VULKAN
+// The declarations below are also needed when REX_HAS_VULKAN is 0: the
+// bridge target compiles the Vulkan closure unconditionally (inert until the
+// runtime constructs VulkanCommandProcessor), and the cvar definitions live
+// in files that are compiled regardless of the MoltenVK link gate.
 REXCVAR_DECLARE(bool, vulkan_sparse_shared_memory);
 REXCVAR_DECLARE(bool, vulkan_submit_on_primary_buffer_end);
 REXCVAR_DECLARE(bool, vulkan_dynamic_rendering);
@@ -94,7 +97,6 @@ REXCVAR_DECLARE(std::string, render_target_path_vulkan);
 // Legacy backend compatibility aliases for shared readback controls.
 REXCVAR_DECLARE(bool, vulkan_readback_resolve);
 REXCVAR_DECLARE(bool, vulkan_readback_memexport);
-#endif  // REX_HAS_VULKAN
 
 #if REX_HAS_D3D12
 REXCVAR_DECLARE(bool, dxbc_switch);

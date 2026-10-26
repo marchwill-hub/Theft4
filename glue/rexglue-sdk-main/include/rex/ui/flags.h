@@ -46,7 +46,10 @@ REXCVAR_DECLARE(int32_t, d3d12_queue_priority);
 REXCVAR_DECLARE(bool, d3d12_allow_variable_refresh_rate_and_tearing);
 #endif  // REX_HAS_D3D12
 
-#if REX_HAS_VULKAN
+// See graphics/flags.h: these declarations are also needed when
+// REX_HAS_VULKAN is 0, because the bridge target compiles the Vulkan closure
+// unconditionally and the cvar definitions are compiled regardless of the
+// MoltenVK link gate.
 REXCVAR_DECLARE(bool, vulkan_log_debug_messages);
 REXCVAR_DECLARE(bool, vulkan_allow_present_mode_immediate);
 REXCVAR_DECLARE(bool, vulkan_allow_present_mode_mailbox);
@@ -62,4 +65,3 @@ REXCVAR_DECLARE(bool, vulkan_require_geometry_shader);
 REXCVAR_DECLARE(bool, vulkan_require_fragment_stores_and_atomics);
 REXCVAR_DECLARE(bool, vulkan_require_vertex_pipeline_stores_and_atomics);
 REXCVAR_DECLARE(bool, vulkan_require_fill_mode_non_solid);
-#endif  // REX_HAS_VULKAN
