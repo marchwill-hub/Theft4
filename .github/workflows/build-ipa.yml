@@ -80,31 +80,51 @@ jobs:
           path: out/mvk-ios
           key: mvk-ios-${{ hashFiles('thirdparty/MoltenVK/MoltenVK/CMakeLists.txt', 'thirdparty/MoltenVK/SPIRV-Cross/CMakeLists.txt', 'glue/rexglue-sdk-main/thirdparty/spirv-tools/CMakeLists.txt') }}
 
-      - name: MoltenVK iOS static libs (cached)
+      - name: MoltenVK iOS static libs (best effort)
         if: steps.mvk.outputs.cache-hit != 'true'
         run: |
-          IOS_FLAGS="-DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_SYSROOT=iphoneos"
-          cmake -S thirdparty/MoltenVK/MoltenVK -B out/mvk-ios/moltenvk \
-            -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF $IOS_FLAGS
-          cmake --build out/mvk-ios/moltenvk --parallel 4
-          cmake -S thirdparty/MoltenVK/SPIRV-Cross -B out/mvk-ios/spirv-cross \
-            -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF \
-            -DSPIRV_CROSS_CLI=OFF -DSPIRV_CROSS_ENABLE_TESTS=OFF -DSPIRV_CROSS_ENABLE_C_API=OFF $IOS_FLAGS
-          cmake --build out/mvk-ios/spirv-cross --target spirv-cross --parallel 4
-          cmake -S glue/rexglue-sdk-main/thirdparty/spirv-tools -B out/mvk-ios/spirv-tools \
-            -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF \
-            -DSPIRV_SKIP_TESTS=ON -DSPIRV_SKIP_EXECUTABLES=ON $IOS_FLAGS
-          cmake --build out/mvk-ios/spirv-tools --target SPIRV-Tools --parallel 4
+          # The MoltenVK archive feeds the optional Vulkan device capability
+          # gate; the 0.3 Metal backend does not require it. The submodule's
+          # CMake is macOS-only (hard AppKit dependency), so use the bundled
+          # Xcode project. Any failure is non-fatal: the IPA simply ships
+          # without the capability gate.
+          ok=1
+          if [ -x thirdparty/MoltenVK/MoltenVK/fetchDependencies ]; then
+            (cd thirdparty/MoltenVK/MoltenVK && ./fetchDependencies) || ok=0
+          fi
+          if [ $ok -eq 1 ]; then
+            xcodebuild -project thirdparty/MoltenVK/MoltenVK/MoltenVK.xcodeproj \
+              -target MoltenVK-iOS-static \
+              -target MoltenVKShaderConverter-iOS \
+              -sdk iphoneos -configuration Release ARCHS=arm64 \
+              SYMROOT="$PWD/out/mvk-ios/xcode" build || ok=0
+          fi
           mkdir -p out/mvk-ios/lib
           find out/mvk-ios \( -name 'libMoltenVK.a' -o -name 'libMoltenVK_Common.a' \
             -o -name 'libMoltenVK_ShaderConverter.a' -o -name 'libspirv-cross.a' \
-            -o -name 'libSPIRV-Tools.a' \) -exec cp {} out/mvk-ios/lib/ \;
+            -o -name 'libSPIRV-Tools.a' \) -exec cp {} out/mvk-ios/lib/ \; 2>/dev/null || true
+          # xcframework slices carry different archive names; normalize them.
+          find out/mvk-ios -type d -name '*.xcframework' 2>/dev/null | while read -r fw; do
+            for slice in "$fw"/*ios*; do
+              [ -d "$slice" ] || continue
+              [ -f "$slice/libSPIRVCross.a" ] && cp "$slice/libSPIRVCross.a" out/mvk-ios/lib/libspirv-cross.a
+              [ -f "$slice/libSPIRVTools.a" ] && cp "$slice/libSPIRVTools.a" out/mvk-ios/lib/libSPIRV-Tools.a
+            done
+          done
           ls -la out/mvk-ios/lib
-          test -f out/mvk-ios/lib/libMoltenVK.a
-          test -f out/mvk-ios/lib/libMoltenVK_Common.a
-          test -f out/mvk-ios/lib/libMoltenVK_ShaderConverter.a
-          test -f out/mvk-ios/lib/libspirv-cross.a
-          test -f out/mvk-ios/lib/libSPIRV-Tools.a
+          need_all() {
+            for lib in libMoltenVK.a libMoltenVK_Common.a libMoltenVK_ShaderConverter.a \
+                       libspirv-cross.a libSPIRV-Tools.a; do
+              [ -f "out/mvk-ios/lib/$lib" ] || return 1
+            done
+            return 0
+          }
+          if [ $ok -eq 1 ] && need_all; then
+            touch out/mvk-ios/lib/.complete
+            echo "MoltenVK gate: ENABLED (all 5 archives present)"
+          else
+            echo "::warning::MoltenVK iOS libraries unavailable; continuing WITHOUT the Vulkan capability gate (Metal backend is unaffected)"
+          fi
 
       - name: Restore build tree cache
         id: build
@@ -117,6 +137,16 @@ jobs:
 
       - name: Configure (ios-device-release)
         run: |
+          MVK_FLAGS=""
+          if [ -f out/mvk-ios/lib/libMoltenVK.a ] && [ -f out/mvk-ios/lib/libMoltenVK_Common.a ] && \
+             [ -f out/mvk-ios/lib/libMoltenVK_ShaderConverter.a ] && [ -f out/mvk-ios/lib/libspirv-cross.a ] && \
+             [ -f out/mvk-ios/lib/libSPIRV-Tools.a ]; then
+            MVK_FLAGS="-DTHEFT4_XENIOS_IOS_LIB_DIR=$GITHUB_WORKSPACE/out/mvk-ios/lib \
+              -DTHEFT4_XENIOS_GENERATED_SHADER_DIR=$GITHUB_WORKSPACE/out/mvk-ios/generated"
+            echo "MoltenVK capability gate: enabled"
+          else
+            echo "MoltenVK capability gate: disabled (libraries not built)"
+          fi
           cmake --preset ios-device-release \
             -DREXGLUE_RUNTIME_ONLY=ON \
             -DREXGLUE_HEADLESS_KERNEL=ON \
@@ -137,8 +167,7 @@ jobs:
             -DTHEFT4_SIGN_DEVICE=OFF \
             -DTHEFT4_PUBLIC_BUILD=ON \
             -DCMAKE_OSX_DEPLOYMENT_TARGET=26.0 \
-            -DTHEFT4_XENIOS_IOS_LIB_DIR="$GITHUB_WORKSPACE/out/mvk-ios/lib" \
-            -DTHEFT4_XENIOS_GENERATED_SHADER_DIR="$GITHUB_WORKSPACE/out/mvk-ios/generated"
+            $MVK_FLAGS
 
       - name: Build
         run: cmake --build --preset theft4-device-release --parallel 4
