@@ -11,6 +11,7 @@
 @property(nonatomic, readonly) UISwitch *showFPS;
 @property(nonatomic, readonly) UISwitch *showFrameTime;
 @property(nonatomic, readonly) UISwitch *showControls;
+@property(nonatomic, readonly) UIButton *touchLayoutButton;
 @property(nonatomic, readonly) UISwitch *anisotropicFiltering;
 @property(nonatomic, readonly) UISwitch *enhancedOutput;
 @property(nonatomic, readonly) UISwitch *fsrBoost;

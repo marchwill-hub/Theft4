@@ -1,0 +1,172 @@
+# Builds the unsigned iOS IPA (Metal, arm64) for AltStore resigning.
+# Pipeline mirrors tools/build_ios_release.sh (docs/IOS_RELEASE_BUILD.md):
+#   1. offline direct-Metal shader corpus (cached)
+#   2. MoltenVK / SPIRV-Cross / SPIRV-Tools iOS arm64 static libs (cached)
+#   3. Xcode build via the ios-device-release preset
+#   4. release verification + IPA packaging
+name: iOS IPA (touch layout)
+
+on:
+  push:
+    branches: [theft4-touch-editor]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: ipa-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ipa:
+    name: Theft4 iOS IPA
+    runs-on: macos-26
+    timeout-minutes: 420
+    env:
+      DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: recursive
+
+      - name: Pin dependencies and patches
+        run: python3 tools/setup_repo.py
+
+      - name: Toolchain (cmake, ninja)
+        run: |
+          brew list --versions cmake &>/dev/null || brew install --quiet cmake
+          brew list --versions ninja &>/dev/null || brew install --quiet ninja
+
+      # The iOS preset validates an embedded game payload (default.xex + the
+      # three core RPFs) at configure time; the IPA itself does not bundle
+      # game files (the launcher's folder picker supplies them at runtime).
+      # CI has no retail game, so the four files are empty placeholders.
+      - name: Stub embedded game payload
+        run: |
+          mkdir -p tools/local_game_payload
+          touch tools/local_game_payload/default.xex \
+                tools/local_game_payload/common.rpf \
+                tools/local_game_payload/xbox360.rpf \
+                tools/local_game_payload/audio.rpf
+
+      - name: Restore Metal shader corpus cache
+        id: metal
+        uses: actions/cache/restore@v4
+        with:
+          path: out/direct-metal
+          key: metal-ios-${{ hashFiles('tools/direct-metal/**', 'LibertyRecompLib/shader/**') }}
+
+      - name: Metal shader corpus (cached)
+        if: steps.metal.outputs.cache-hit != 'true'
+        run: |
+          cmake -S tools/direct-metal -B out/direct-metal/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build out/direct-metal/build --target metal_shader_export metal_host_shader_export --parallel 4
+          out/direct-metal/build/metal_shader_export out/direct-metal/corpus
+          out/direct-metal/build/metal_host_shader_export out/direct-metal/host-corpus
+          python3 tools/direct-metal/compile_shaders.py out/direct-metal/corpus out/direct-metal/ios --platform ios --jobs 4
+          python3 tools/direct-metal/compile_shaders.py out/direct-metal/host-corpus out/direct-metal/ios/Host --platform ios --jobs 4
+          test -f out/direct-metal/ios/manifest.tsv
+          test -f out/direct-metal/ios/Host/HOST_SHADER_MANIFEST.json
+
+      - name: Restore MoltenVK iOS library cache
+        id: mvk
+        uses: actions/cache/restore@v4
+        with:
+          path: out/mvk-ios
+          key: mvk-ios-${{ hashFiles('thirdparty/MoltenVK/MoltenVK/CMakeLists.txt', 'thirdparty/MoltenVK/SPIRV-Cross/CMakeLists.txt', 'glue/rexglue-sdk-main/thirdparty/spirv-tools/CMakeLists.txt') }}
+
+      - name: MoltenVK iOS static libs (cached)
+        if: steps.mvk.outputs.cache-hit != 'true'
+        run: |
+          IOS_FLAGS="-DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_SYSROOT=iphoneos"
+          cmake -S thirdparty/MoltenVK/MoltenVK -B out/mvk-ios/moltenvk \
+            -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF $IOS_FLAGS
+          cmake --build out/mvk-ios/moltenvk --parallel 4
+          cmake -S thirdparty/MoltenVK/SPIRV-Cross -B out/mvk-ios/spirv-cross \
+            -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF \
+            -DSPIRV_CROSS_CLI=OFF -DSPIRV_CROSS_ENABLE_TESTS=OFF -DSPIRV_CROSS_ENABLE_C_API=OFF $IOS_FLAGS
+          cmake --build out/mvk-ios/spirv-cross --target spirv-cross --parallel 4
+          cmake -S glue/rexglue-sdk-main/thirdparty/spirv-tools -B out/mvk-ios/spirv-tools \
+            -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF \
+            -DSPIRV_SKIP_TESTS=ON -DSPIRV_SKIP_EXECUTABLES=ON $IOS_FLAGS
+          cmake --build out/mvk-ios/spirv-tools --target SPIRV-Tools --parallel 4
+          mkdir -p out/mvk-ios/lib
+          find out/mvk-ios \( -name 'libMoltenVK.a' -o -name 'libMoltenVK_Common.a' \
+            -o -name 'libMoltenVK_ShaderConverter.a' -o -name 'libspirv-cross.a' \
+            -o -name 'libSPIRV-Tools.a' \) -exec cp {} out/mvk-ios/lib/ \;
+          ls -la out/mvk-ios/lib
+          test -f out/mvk-ios/lib/libMoltenVK.a
+          test -f out/mvk-ios/lib/libMoltenVK_Common.a
+          test -f out/mvk-ios/lib/libMoltenVK_ShaderConverter.a
+          test -f out/mvk-ios/lib/libspirv-cross.a
+          test -f out/mvk-ios/lib/libSPIRV-Tools.a
+
+      - name: Restore build tree cache
+        id: build
+        uses: actions/cache/restore@v4
+        with:
+          path: out/build/ios-device-release
+          key: ipa-build-${{ github.sha }}
+          restore-keys: |
+            ipa-build-
+
+      - name: Configure (ios-device-release)
+        run: |
+          cmake --preset ios-device-release \
+            -DREXGLUE_RUNTIME_ONLY=ON \
+            -DREXGLUE_HEADLESS_KERNEL=ON \
+            -DTHEFT4_BUILD_GAME_CODE=ON \
+            -DTHEFT4_ENABLE_GAME_STARTUP=ON \
+            -DTHEFT4_COMPILE_GTA4_NATIVE_BACKEND=ON \
+            -DTHEFT4_ENABLE_GTA4_NATIVE_BACKEND=ON \
+            -DTHEFT4_LAB_BUILD=ON \
+            -DTHEFT4_BUNDLE_IDENTIFIER=com.lukebrosious.theft4 \
+            -DTHEFT4_DISPLAY_NAME=Theft4 \
+            -DTHEFT4_DIRECT_METAL_BACKEND=ON \
+            -DTHEFT4_DIRECT_METAL_DEFAULT=ON \
+            -DTHEFT4_METAL_LIBRARIES="$GITHUB_WORKSPACE/out/direct-metal/ios" \
+            -DTHEFT4_METAL_HOST_LIBRARIES="$GITHUB_WORKSPACE/out/direct-metal/ios/Host" \
+            -DTHEFT4_NATIVE_METAL_CAPTURE=OFF \
+            -DTHEFT4_RENDER_SOURCE_REVISION="$(git rev-parse --short=8 HEAD)" \
+            -DTHEFT4_SUSTAINED_EXECUTION=ON \
+            -DTHEFT4_SIGN_DEVICE=OFF \
+            -DTHEFT4_PUBLIC_BUILD=ON \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=26.0 \
+            -DTHEFT4_XENIOS_IOS_LIB_DIR="$GITHUB_WORKSPACE/out/mvk-ios/lib" \
+            -DTHEFT4_XENIOS_GENERATED_SHADER_DIR="$GITHUB_WORKSPACE/out/mvk-ios/generated"
+
+      - name: Build
+        run: cmake --build --preset theft4-device-release --parallel 4
+
+      - name: Verify release build
+        run: python3 tests/ios/verify_release_build.py out/build/ios-device-release
+
+      - name: Package IPA
+        run: |
+          mkdir -p dist
+          tools/package_ios_ipa.sh out/build/ios-device-release/theft4/Release/Theft4.app dist
+          ls -la dist
+          cd dist
+          shasum -a 256 *.ipa > sha256sums.txt
+          cat sha256sums.txt
+
+      - name: Save build tree cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: out/build/ios-device-release
+          key: ipa-build-${{ github.sha }}
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: Theft4-0.3.2-145-touch-layout-ipa
+          path: |
+            dist/*.ipa
+            dist/sha256sums.txt
+          if-no-files-found: error

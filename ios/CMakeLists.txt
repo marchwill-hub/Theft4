@@ -528,6 +528,7 @@ if(THEFT4_BC_TEXTURE_COMPATIBILITY)
     set(THEFT4_TEXTURE_PREPARATION_PREVIEW ON)
 endif()
 add_executable(Theft4 MACOSX_BUNDLE Theft4/main.m Theft4/Theft4TouchControls.m
+    Theft4/Theft4TouchLayout.m Theft4/Theft4TouchLayoutEditor.m
     Theft4/Theft4TextureSources.m
     Theft4/Theft4LauncherView.m
     Theft4/Theft4FrameTimeView.m Theft4/Theft4CityView.m Theft4/Theft4CPUUsageView.m

@@ -27,6 +27,7 @@ extern int rex_gta4_native_profile_start(void);
 extern int rex_gta4_native_profile_status(void);
 #import "Theft4TouchControls.h"
 #import "Theft4LauncherView.h"
+#import "Theft4TouchLayoutEditor.h"
 #ifdef THEFT4_TEXTURE_PREPARATION_PREVIEW
 #import "Theft4TextureSources.h"
 #endif
@@ -603,6 +604,7 @@ static BOOL Theft4InstallSaveExport(NSURL *selected, NSURL *support, NSURL *docu
 - (void)downloadLatestLogCapture;
 - (void)exportSavesToFiles;
 - (void)importSavesFromFiles;
+- (void)openTouchLayoutEditor;
 - (void)showSaveMessage:(NSString *)title detail:(NSString *)detail;
 - (void)updateFrameTimeHUD;
 - (BOOL)beginPublicationCapture;
@@ -950,6 +952,8 @@ static void bootEvent(void *context, const char *event) {
         (frameSpeedFirst && strcmp(frameSpeedFirst,"1")==0)) [self applyFrameSpeedGraphicsChoices];
     [_bringupOverlay.frameSpeedButton addTarget:self action:@selector(applyFrameSpeedGraphicsPreset) forControlEvents:UIControlEventTouchUpInside];
     [_bringupOverlay.restoreGraphicsButton addTarget:self action:@selector(restorePreviousGraphicsPreset) forControlEvents:UIControlEventTouchUpInside];
+    [_bringupOverlay.touchLayoutButton addTarget:self action:@selector(openTouchLayoutEditor)
+        forControlEvents:UIControlEventTouchUpInside];
     _bringupOverlay.restoreGraphicsButton.hidden = ![speedDefaults dictionaryForKey:@"Theft4PreviousGraphicsSettings107"];
     // Development probes remain disabled; user overlays and bounded captures
     // are independent opt-ins. Export remains available for previously saved logs.
@@ -1715,6 +1719,18 @@ static void bootEvent(void *context, const char *event) {
     _saveImportPicker.delegate = self;
     _saveImportPicker.allowsMultipleSelection = NO;
     [self presentViewController:_saveImportPicker animated:YES completion:nil];
+}
+
+- (void)openTouchLayoutEditor {
+    // The editor is a self-contained landscape UI over the launcher. It edits
+    // the shared touch layout; saving applies to the in-game pad immediately.
+    Theft4TouchLayoutEditorViewController *editor = [Theft4TouchLayoutEditorViewController new];
+    UINavigationController *navigation =
+        [[UINavigationController alloc] initWithRootViewController:editor];
+    navigation.navigationBarHidden = YES;
+    navigation.modalPresentationStyle = UIModalPresentationFullScreen;
+    [self record:@"ui.touch_layout_editor_opened"];
+    [self presentViewController:navigation animated:YES completion:nil];
 }
 
 - (void)chooseTitleUpdate {

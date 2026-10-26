@@ -374,11 +374,15 @@ static UISegmentedControl *ChoiceControl(NSArray<NSString *> *items, NSString *i
     }
     _graphics = Column(graphicsRows, 20);
 
+    _touchLayoutButton = Action(@"TOUCH LAYOUT EDITOR", NO);
+    _touchLayoutButton.accessibilityIdentifier = @"settings.touchLayoutEditor";
     _interfacePage = Column(@[
         [self setting:@"CPU / THREAD GRAPH" detail:@"Compact device-core and game-thread activity. Updates once per second; included in long captures while enabled." toggle:_showCPUUsage],
         [self setting:@"FRAME COUNTER" detail:@"Unique game frames in the top-right corner." toggle:_showFPS],
         [self setting:@"FRAME-TIME GRAPH" detail:@"Frame delivery against the 33.3 ms target. Double-tap for a short detailed profile. Hold to mark a lag spike or stop and save a long capture." toggle:_showFrameTime],
         [self setting:@"TOUCH CONTROLS" detail:@"Physical controllers continue to work when the overlay is hidden." toggle:_showControls],
+        Column(@[_touchLayoutButton,
+            Copy(@"Drag any on-screen control to a new spot and fine-tune its size. Your layout is saved to this device.", 12, NO)], 6),
         Copy(@"A connected controller can move focus through this launcher. Use the D-pad or left stick to navigate and A to select.", 12, NO)
     ], 20);
 

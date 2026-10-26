@@ -5,30 +5,17 @@
 #import <QuartzCore/QuartzCore.h>
 #include <math.h>
 #include "theft4_touch_input.h"
+#import "Theft4TouchLayout.h"
 
-typedef struct { const char *label; CGFloat x, y, w, h; uint16_t button; int trigger; } PadControl;
-// XeniOS FPS Compact normalized positions, with explicit D-pad / stick-click
-// buttons instead of its editor's combined ring and secondary tap gestures.
-static const PadControl controls[] = {
-    {"Move", .055, .56, .190, .315, 0, 0},
-    {"Back", .390, .045, .080, .112, 0x20, 0},
-    {"Start", .495, .045, .085, .112, 0x10, 0},
-    {"LB", .660, .050, .085, .112, 0x100, 0},
-    {"RB", .765, .050, .085, .112, 0x200, 0},
-    {"LT", .095, .405, .120, .110, 0, 1},
-    {"Y", .760, .455, .065, .115, 0x8000, 0},
-    {"X", .700, .585, .065, .115, 0x4000, 0},
-    {"B", .820, .585, .065, .115, 0x2000, 0},
-    {"A", .760, .715, .065, .115, 0x1000, 0},
-    {"RT", .860, .405, .120, .110, 0, 2},
-    {"↑", .315, .68, .055, .085, 0x1, 0},
-    {"↓", .315, .86, .055, .085, 0x2, 0},
-    {"←", .258, .77, .055, .085, 0x4, 0},
-    {"→", .372, .77, .055, .085, 0x8, 0},
-    {"L3", .440, .85, .065, .10, 0x40, 0},
-    {"R3", .530, .85, .065, .10, 0x80, 0},
-};
-static const NSInteger controlCount = sizeof(controls) / sizeof(controls[0]);
+// The pad layout is user-adjustable: positions and sizes come from the shared
+// Theft4TouchLayout model (built-in defaults or the user's saved editor
+// layout). This view re-reads it on every layout pass, so a saved change
+// applies live without restarting the game.
+static const NSInteger kPadControlCount = 17;
+
+static inline Theft4TouchControlSpec *PadSpec(NSInteger i) {
+    return [[Theft4TouchLayout shared].specs objectAtIndex:i];
+}
 
 @interface Theft4TouchControls () {
     NSMutableArray<UILabel *> *_labels;
@@ -51,9 +38,12 @@ static const NSInteger controlCount = sizeof(controls) / sizeof(controls[0]);
         self.accessibilityIdentifier = @"game.touchControls";
         _captures = [NSMapTable strongToStrongObjectsMapTable];
         _labels = [NSMutableArray new];
-        for (NSInteger i = 0; i < controlCount; ++i) {
+        [[NSNotificationCenter defaultCenter]
+            addObserver:self selector:@selector(touchLayoutDidChange)
+                   name:Theft4TouchLayoutDidChangeNotification object:nil];
+        for (NSInteger i = 0; i < kPadControlCount; ++i) {
             UILabel *label = [UILabel new];
-            label.text = [NSString stringWithUTF8String:controls[i].label];
+            label.text = PadSpec(i).label;
             label.textAlignment = NSTextAlignmentCenter;
             label.font = [UIFont systemFontOfSize:17 weight:UIFontWeightSemibold];
             label.adjustsFontSizeToFitWidth = YES;
@@ -82,8 +72,9 @@ static const NSInteger controlCount = sizeof(controls) / sizeof(controls[0]);
         _lastInsets = self.safeAreaInsets;
     }
     CGRect area = UIEdgeInsetsInsetRect(self.bounds, self.safeAreaInsets);
-    for (NSInteger i = 0; i < controlCount; ++i) {
-        PadControl c = controls[i];
+    for (NSInteger i = 0; i < kPadControlCount; ++i) {
+        Theft4TouchControlSpec *c = PadSpec(i);
+        if (![_labels[i].text isEqualToString:c.label]) _labels[i].text = c.label;
         CGFloat w = MAX(36, c.w * area.size.width);
         CGFloat h = MAX(36, c.h * area.size.height);
         // Circular movement pad; landscape positions remain proportional.
@@ -126,7 +117,7 @@ static const NSInteger controlCount = sizeof(controls) / sizeof(controls[0]);
     for (UITouch *touch in touches) {
         CGPoint p = [touch locationInView:self];
         NSInteger capture = -1; // Unoccupied background is swipe-to-look.
-        for (NSInteger i = controlCount - 1; i >= 0; --i) {
+        for (NSInteger i = kPadControlCount - 1; i >= 0; --i) {
             if (CGRectContainsPoint(_labels[i].frame, p)) { capture = i; break; }
         }
         // Only one movement and one look capture; buttons are independently held.
@@ -181,9 +172,10 @@ static const NSInteger controlCount = sizeof(controls) / sizeof(controls[0]);
             state.ly = (int16_t)lround(y * 32767);
             _stickKnob.center = CGPointMake(center.x + x * radius * .65, center.y - y * radius * .65);
         } else if (CGRectContainsPoint(CGRectInset(_labels[i].frame, -10, -10), p)) {
-            state.buttons |= controls[i].button;
-            if (controls[i].trigger == 1) state.left_trigger = 255;
-            if (controls[i].trigger == 2) state.right_trigger = 255;
+            Theft4TouchControlSpec *c = PadSpec(i);
+            state.buttons |= c.button;
+            if (c.trigger == 1) state.left_trigger = 255;
+            if (c.trigger == 2) state.right_trigger = 255;
             _labels[i].backgroundColor = [UIColor colorWithWhite:1 alpha:.35];
         }
     }
@@ -211,5 +203,9 @@ static const NSInteger controlCount = sizeof(controls) / sizeof(controls[0]);
     _lookDelta = CGPointZero;
     theft4_touch_store(state);
 }
-- (void)dealloc { [_lookTimer invalidate]; }
+- (void)touchLayoutDidChange { [self setNeedsLayout]; }
+- (void)dealloc {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+    [_lookTimer invalidate];
+}
 @end
