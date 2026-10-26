@@ -92,26 +92,29 @@ static const NSInteger kControlCount = 17;
 }
 
 - (BOOL)hasCustomLayout {
-    return [[[self.class storagePath] fileExistsAtPath:]];
+    return [[NSFileManager defaultManager] fileExistsAtPath:[self.class storagePath]];
 }
 
 - (NSArray<Theft4TouchControlSpec *> *)readSavedSpecs {
     NSData *data = [NSData dataWithContentsOfFile:[self.class storagePath]];
     if (!data) return nil;
     id parsed = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
-    if (![parsed isKindOfClass:[NSArray class]] || parsed.count != kControlCount) return nil;
+    if (![parsed isKindOfClass:[NSArray class]] ||
+        [(NSArray *)parsed count] != kControlCount) return nil;
+    NSArray *rows = parsed;
     NSMutableArray<Theft4TouchControlSpec *> *specs = [NSMutableArray new];
     for (NSInteger i = 0; i < kControlCount; ++i) {
-        id row = parsed[i];
+        id row = rows[i];
         if (![row isKindOfClass:[NSDictionary class]]) return nil;
+        NSDictionary *entry = row;
         Theft4TouchControlSpec *spec = [Theft4TouchControlSpec new];
-        spec.label = row[@"label"] ? [row[@"label"] copy] : nil;
-        spec.x = [row[@"x"] doubleValue];
-        spec.y = [row[@"y"] doubleValue];
-        spec.w = [row[@"w"] doubleValue];
-        spec.h = [row[@"h"] doubleValue];
-        spec.button = (uint16_t)row[@"button"].unsignedIntValue;
-        spec.trigger = row[@"trigger"].integerValue;
+        spec.label = entry[@"label"] ? [entry[@"label"] copy] : nil;
+        spec.x = [entry[@"x"] doubleValue];
+        spec.y = [entry[@"y"] doubleValue];
+        spec.w = [entry[@"w"] doubleValue];
+        spec.h = [entry[@"h"] doubleValue];
+        spec.button = (uint16_t)[entry[@"button"] unsignedIntValue];
+        spec.trigger = [entry[@"trigger"] integerValue];
         if (!spec.label || spec.w < .02 || spec.h < .02 ||
             spec.x < -.5 || spec.y < -.5 || spec.x > 1.5 || spec.y > 1.5)
             return nil;

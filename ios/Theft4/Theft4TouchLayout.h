@@ -7,7 +7,7 @@ FOUNDATION_EXPORT NSNotificationName const Theft4TouchLayoutDidChangeNotificatio
 // the game window's landscape safe area, exactly like the built-in pad table.
 // The layout is a live shared model: the on-screen pad reads it on every
 // layout pass, so a saved change applies without restarting the game.
-@interface Theft4TouchLayout : NSObject
+@class Theft4TouchControlSpec;
 
 // One control row: label, normalized x/y/w/h, Xbox button bitmask, trigger.
 @interface Theft4TouchControlSpec : NSObject

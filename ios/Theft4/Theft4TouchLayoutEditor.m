@@ -13,6 +13,30 @@ static CGFloat ClampF(CGFloat v, CGFloat lo, CGFloat hi) {
     return MIN(hi, MAX(lo, v));
 }
 
+static UILabel *MonoLabel(NSString *text, CGFloat size, unsigned color) {
+    UILabel *label = [UILabel new];
+    label.text = text;
+    label.font = [UIFont monospacedSystemFontOfSize:size weight:UIFontWeightSemibold];
+    label.textColor = Ink(color);
+    label.backgroundColor = [UIColor clearColor];
+    return label;
+}
+
+static UIButton *BarButton(NSString *title, unsigned background, unsigned foreground,
+                           BOOL accent) {
+    UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
+    UIButtonConfiguration *config = [UIButtonConfiguration plainButtonConfiguration];
+    config.title = title;
+    config.cornerStyle = UIButtonConfigurationCornerStyleFixed;
+    config.background.cornerRadius = 4;
+    config.baseForegroundColor = Ink(foreground);
+    config.background.backgroundColor = Ink(background);
+    config.contentInsets = NSDirectionalEdgeInsetsMake(11, 16, 11, 16);
+    button.configuration = config;
+    (void)accent;
+    return button;
+}
+
 // Canvas background with a 10% reference grid.
 @interface Theft4EditorCanvasView : UIView
 @end
@@ -58,30 +82,6 @@ static CGFloat ClampF(CGFloat v, CGFloat lo, CGFloat hi) {
 }
 - (BOOL)shouldAutorotate { return YES; }
 
-static UILabel *MonoLabel(NSString *text, CGFloat size, unsigned color) {
-    UILabel *label = [UILabel new];
-    label.text = text;
-    label.font = [UIFont monospacedSystemFontOfSize:size weight:UIFontWeightSemibold];
-    label.textColor = Ink(color);
-    label.backgroundColor = [UIColor clearColor];
-    return label;
-}
-
-static UIButton *BarButton(NSString *title, unsigned background, unsigned foreground,
-                           BOOL accent) {
-    UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
-    UIButtonConfiguration *config = [UIButtonConfiguration plainButtonConfiguration];
-    config.title = title;
-    config.cornerStyle = UIButtonConfigurationCornerStyleFixed;
-    config.background.cornerRadius = 4;
-    config.baseForegroundColor = Ink(foreground);
-    config.background.backgroundColor = Ink(background);
-    config.contentInsets = NSDirectionalEdgeInsetsMake(11, 16, 11, 16);
-    button.configuration = config;
-    (void)accent;
-    return button;
-}
-
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.view.backgroundColor = Ink(0x050B0E);
@@ -90,7 +90,6 @@ static UIButton *BarButton(NSString *title, unsigned background, unsigned foregr
     // coordinate space the in-game pad lays out against, so what you see
     // here is what you get in the game.
     _canvas = [Theft4EditorCanvasView new];
-    _canvas.translatesAutoresizingMaskIntoConstraints = NO;
     [self.view addSubview:_canvas];
 
     _draft = [NSMutableArray new];
@@ -133,7 +132,7 @@ static UIButton *BarButton(NSString *title, unsigned background, unsigned foregr
     UIStackView *topLeft = [[UIStackView alloc] initWithArrangedSubviews:@[title, _resetButton]];
     topLeft.axis = UILayoutConstraintAxisHorizontal;
     topLeft.spacing = 10;
-    topLeft.alignment = UIControlContentVerticalAlignmentCenter;
+    topLeft.alignment = UIStackViewAlignmentCenter;
     UIStackView *topRight = [[UIStackView alloc] initWithArrangedSubviews:@[_saveButton, _closeButton]];
     topRight.axis = UILayoutConstraintAxisHorizontal;
     topRight.spacing = 10;
@@ -155,7 +154,7 @@ static UIButton *BarButton(NSString *title, unsigned background, unsigned foregr
     _hSlider = slider;
     for (UISlider *s in @[_xSlider, _ySlider, _wSlider, _hSlider]) {
         s.minimumTrackTintColor = Ink(0xC99755);
-        s.thumbTint = Ink(0xE6B56B);
+        s.thumbTintColor = Ink(0xE6B56B);
         [s addTarget:self action:@selector(sliderChanged:) forControlEvents:UIControlEventValueChanged];
     }
     NSMutableArray<UIView *> *rows = [NSMutableArray new];
@@ -197,7 +196,7 @@ static UIButton *BarButton(NSString *title, unsigned background, unsigned foregr
 
 - (void)viewDidLayoutSubviews {
     [super viewDidLayoutSubviews];
-    _canvas.frame = UIEdgeInsetsInsetRect(self.view.bounds, self.view.safeAreaInsets);
+    _canvas.frame = UIEdgeInsetsInsetRect(self.view.safeAreaInsets, self.view.bounds);
     [self updateControlFramesAnimated:NO];
 }
 
