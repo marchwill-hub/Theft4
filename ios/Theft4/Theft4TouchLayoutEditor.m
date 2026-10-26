@@ -196,7 +196,7 @@ static UIButton *BarButton(NSString *title, unsigned background, unsigned foregr
 
 - (void)viewDidLayoutSubviews {
     [super viewDidLayoutSubviews];
-    _canvas.frame = UIEdgeInsetsInsetRect(self.view.safeAreaInsets, self.view.bounds);
+    _canvas.frame = UIEdgeInsetsInsetRect(self.view.bounds, self.view.safeAreaInsets);
     [self updateControlFramesAnimated:NO];
 }
 
@@ -228,7 +228,7 @@ static UIButton *BarButton(NSString *title, unsigned background, unsigned foregr
             }
         }
     };
-    if (animated) [UIView animateKeyframesWithDuration:.15 options:0 animations:updates completion:nil];
+    if (animated) [UIView animateWithDuration:.15 animations:updates];
     else updates();
 }
 

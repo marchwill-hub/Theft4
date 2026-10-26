@@ -71,7 +71,7 @@ static inline Theft4TouchControlSpec *PadSpec(NSInteger i) {
         _lastBounds = self.bounds;
         _lastInsets = self.safeAreaInsets;
     }
-    CGRect area = UIEdgeInsetsInsetRect(self.safeAreaInsets, self.bounds);
+    CGRect area = UIEdgeInsetsInsetRect(self.bounds, self.safeAreaInsets);
     for (NSInteger i = 0; i < kPadControlCount; ++i) {
         Theft4TouchControlSpec *c = PadSpec(i);
         if (![_labels[i].text isEqualToString:c.label]) _labels[i].text = c.label;
