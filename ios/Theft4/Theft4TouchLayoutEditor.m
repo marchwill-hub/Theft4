@@ -196,7 +196,7 @@ static UIButton *BarButton(NSString *title, unsigned background, unsigned foregr
 
 - (void)viewDidLayoutSubviews {
     [super viewDidLayoutSubviews];
-    _canvas.frame = UIEdgeInsetsInsetRect(self.view.bounds, self.view.safeAreaInsets);
+    _canvas.frame = UIEdgeInsetsInsetRect(self.view.safeAreaInsets, self.view.bounds);
     [self updateControlFramesAnimated:NO];
 }
 

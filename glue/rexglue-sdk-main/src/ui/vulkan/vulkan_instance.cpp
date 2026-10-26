@@ -35,6 +35,22 @@ vkDestroyInstance(VkInstance instance,
                   const VkAllocationCallbacks* allocator);
 #endif
 
+#if REX_PLATFORM_IOS && !REX_HAS_VULKAN
+// iOS normally statically links MoltenVK, which exports these loader entry
+// points. When the MoltenVK gate is off (no XeniOS archives on the CI
+// runner), provide definitions so the always-compiled Vulkan closure links.
+// Create() then reports "Failed to get Vulkan global function pointers via
+// vkGetInstanceProcAddr" and returns nullptr; the Metal backend path is
+// taken and the Vulkan code stays inert at runtime.
+extern "C" VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL
+vkGetInstanceProcAddr(VkInstance, const char*) {
+  return nullptr;
+}
+extern "C" VKAPI_ATTR void VKAPI_CALL
+vkDestroyInstance(VkInstance, const VkAllocationCallbacks*) {
+}
+#endif
+
 REXCVAR_DEFINE_BOOL(vulkan_log_debug_messages, true, "UI/Vulkan", "Log Vulkan debug messages");
 
 #if REX_PLATFORM_MAC || REX_PLATFORM_IOS
