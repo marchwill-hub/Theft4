@@ -842,8 +842,31 @@ static void bootEvent(void *context, const char *event) {
     [_bringupOverlay.customTimeCycle addTarget:self action:@selector(customTimeCycleChanged:)
         forControlEvents:UIControlEventValueChanged];
 #ifdef THEFT4_HAS_GTA4_NATIVE_BACKEND
-    _bringupOverlay.nativeAspect.on = [NSUserDefaults.standardUserDefaults
-        boolForKey:@"Theft4ModNativeAspect"];
+    {
+        NSUserDefaults *nativeAspectDefaults = NSUserDefaults.standardUserDefaults;
+        BOOL userChose = [nativeAspectDefaults boolForKey:@"Theft4ModNativeAspectUserSet"];
+        BOOL nativeAspectOn = [nativeAspectDefaults boolForKey:@"Theft4ModNativeAspect"];
+        if (!userChose) {
+            // Auto-pick the frame that fits the display, on every launch
+            // until the user flips the switch explicitly: unusual aspect
+            // displays (e.g. the 2670x1878 iPhone Duo foldable, 1.42:1)
+            // present best in a native-aspect frame; standard 16:9, 19.5:9
+            // and 20:9 iPhones and 4:3 iPads keep the classic centered
+            // 16:9. This also migrates installs that predate the auto
+            // default, whose stored value forced the classic frame.
+            const CGSize screen = [UIScreen mainScreen].bounds.size;
+            const CGFloat ratio = (screen.height > 0)
+                ? MAX(screen.width / screen.height, screen.height / screen.width)
+                : 16.0 / 9.0;
+            const CGFloat standardRatios[] = {4.0 / 3.0, 16.0 / 9.0, 19.5 / 9.0, 20.0 / 9.0};
+            BOOL standard = NO;
+            for (size_t i = 0; i < 4; ++i)
+                if (fabs(ratio - standardRatios[i]) < 0.06) { standard = YES; break; }
+            nativeAspectOn = !standard;
+            [nativeAspectDefaults setBool:nativeAspectOn forKey:@"Theft4ModNativeAspect"];
+        }
+        _bringupOverlay.nativeAspect.on = nativeAspectOn;
+    }
 #else
     _bringupOverlay.nativeAspect.enabled = NO;
 #endif
@@ -1955,6 +1978,7 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
 - (void)nativeAspectChanged:(UISwitch *)sender {
     if (_executionAttempted) return;
     [NSUserDefaults.standardUserDefaults setBool:sender.on forKey:@"Theft4ModNativeAspect"];
+    [NSUserDefaults.standardUserDefaults setBool:YES forKey:@"Theft4ModNativeAspectUserSet"];
     [self updateGameAspect];
     [self.view layoutIfNeeded];
     [_bringupOverlay refreshConfigurationSummary];
