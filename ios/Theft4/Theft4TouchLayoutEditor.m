@@ -234,7 +234,7 @@ static UIButton *BarButton(NSString *title, unsigned background, unsigned foregr
         _sizeSlider.minimumValue = 0.25;
         _sizeSlider.maximumValue = 3.0;
         _sizeSlider.minimumValueImage =
-            [[UIImage imageWithSystemName:@"minus"] imageWithTintColor:Ink(0xE5DECA)
+            [[UIImage systemImageNamed:@"minus"] imageWithTintColor:Ink(0xE5DECA)
                 renderingMode:UIImageRenderingModeAlwaysOriginal];
         [_sizeSlider addTarget:self action:@selector(sizeSliderChanged:)
             forControlEvents:UIControlEventValueChanged];
