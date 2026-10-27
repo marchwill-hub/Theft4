@@ -81,6 +81,21 @@ static NSString *Theft4DisplayName(void) {
     return name.length ? name : @"Theft4";
 }
 
+// Displays whose aspect does not match the standard phone/iPad families
+// (4:3, 16:9, 19.5:9, 20:9 within 0.06) — e.g. the 2670x1878 iPhone Duo
+// foldable (1.42:1). These are handled natively end to end instead of the
+// classic centered-16:9 / fixed-1080p presentation paths.
+static BOOL Theft4DisplayIsNonStandardAspect(void) {
+    const CGSize screen = [UIScreen mainScreen].bounds.size;
+    const CGFloat ratio = (screen.height > 0)
+        ? MAX(screen.width / screen.height, screen.height / screen.width)
+        : 16.0 / 9.0;
+    const CGFloat standardRatios[] = {4.0 / 3.0, 16.0 / 9.0, 19.5 / 9.0, 20.0 / 9.0};
+    for (size_t i = 0; i < 4; ++i)
+        if (fabs(ratio - standardRatios[i]) < 0.06) return NO;
+    return YES;
+}
+
 static NSString *Theft4SetupCompleteDefaultsKey(void) {
 #ifdef THEFT4_INTRO_TEST_BUILD
     return @"Theft4IntroTestSetupComplete";
@@ -854,15 +869,7 @@ static void bootEvent(void *context, const char *event) {
             // and 20:9 iPhones and 4:3 iPads keep the classic centered
             // 16:9. This also migrates installs that predate the auto
             // default, whose stored value forced the classic frame.
-            const CGSize screen = [UIScreen mainScreen].bounds.size;
-            const CGFloat ratio = (screen.height > 0)
-                ? MAX(screen.width / screen.height, screen.height / screen.width)
-                : 16.0 / 9.0;
-            const CGFloat standardRatios[] = {4.0 / 3.0, 16.0 / 9.0, 19.5 / 9.0, 20.0 / 9.0};
-            BOOL standard = NO;
-            for (size_t i = 0; i < 4; ++i)
-                if (fabs(ratio - standardRatios[i]) < 0.06) { standard = YES; break; }
-            nativeAspectOn = !standard;
+            nativeAspectOn = Theft4DisplayIsNonStandardAspect();
             [nativeAspectDefaults setBool:nativeAspectOn forKey:@"Theft4ModNativeAspect"];
         }
         _bringupOverlay.nativeAspect.on = nativeAspectOn;
@@ -906,6 +913,14 @@ static void bootEvent(void *context, const char *event) {
         UISwitch *toggle = toggles[i];
         toggle.on = [NSUserDefaults.standardUserDefaults boolForKey:keys[i]];
         [toggle addTarget:self action:@selector(displaySettingsChanged:) forControlEvents:UIControlEventValueChanged];
+    }
+    // Unusual-aspect displays (e.g. the iPhone Duo foldable) present best at
+    // full native resolution: default the FSR upscaled output on until the
+    // user chooses otherwise.
+    if (Theft4DisplayIsNonStandardAspect() &&
+        ![NSUserDefaults.standardUserDefaults objectForKey:@"Theft4EnhancedOutput1080p"]) {
+        _enhancedOutput.on = YES;
+        [NSUserDefaults.standardUserDefaults setBool:YES forKey:@"Theft4EnhancedOutput1080p"];
     }
     [self resetAutomaticCaptureForNewSession];
     [_performanceCapture addTarget:self action:@selector(displaySettingsChanged:)
@@ -3154,8 +3169,10 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
                 _bringupOverlay.renderResolution ? _bringupOverlay.renderHeight : 720,
                 _bringupOverlay.renderResolution ? _bringupOverlay.fsrUpscaling.on : _enhancedOutput.on,
                 nativeWidth, nativeHeight,
-                strcmp(getenv("THEFT4_DEVICE_PROFILE") ?: "", "a19") == 0 || _limitedMemoryProfile ||
-                    (!_bringupOverlay.renderResolution && !_fsrBoost.on),
+                ((strcmp(getenv("THEFT4_DEVICE_PROFILE") ?: "", "a19") == 0) ||
+                 _limitedMemoryProfile ||
+                 (!_bringupOverlay.renderResolution && !_fsrBoost.on)) &&
+                !Theft4DisplayIsNonStandardAspect(),
                 bounds.width > 0 ? safe.left / bounds.width : 0,
                 bounds.height > 0 ? safe.top / bounds.height : 0,
                 bounds.width > 0 ? safe.right / bounds.width : 0,
