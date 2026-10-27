@@ -61,17 +61,14 @@ static UIButton *BarButton(NSString *title, unsigned background, unsigned foregr
 }
 @end
 
+// The editor is a bare canvas: drag any control to move it, then SAVE.
+// No panels, no sliders — nothing sits between the finger and the controls.
 @interface Theft4TouchLayoutEditorViewController () {
     Theft4EditorCanvasView *_canvas;
     NSMutableArray<UILabel *> *_controls;
     NSMutableArray<Theft4TouchControlSpec *> *_draft;
-    NSInteger _selected;
-    UISlider *_xSlider, *_ySlider, *_wSlider, *_hSlider;
-    UILabel *_detailTitle, *_detailMetrics;
-    UIStackView *_detailPanel;
     UIButton *_saveButton, *_resetButton, *_closeButton;
     UIStackView *_topLeft, *_topRight;
-    BOOL _applyingSlider;
 }
 @end
 
@@ -114,12 +111,10 @@ static UIButton *BarButton(NSString *title, unsigned background, unsigned foregr
         UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc]
             initWithTarget:self action:@selector(panControl:)];
         [label addGestureRecognizer:pan];
-        UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc]
-            initWithTarget:self action:@selector(selectControl:)];
-        [label addGestureRecognizer:tap];
     }
 
     UILabel *title = MonoLabel(@"TOUCH LAYOUT EDITOR", 12, 0xE6B56B);
+    UILabel *buildTag = MonoLabel(@"BUILD 147", 10, 0x5F7176);
     _closeButton = BarButton(@"CLOSE", 0x243236, 0xE5DECA, NO);
     _resetButton = BarButton(@"RESET", 0x243236, 0xE5DECA, NO);
     _saveButton = BarButton(@"SAVE", 0xE6B56B, 0x111B1D, YES);
@@ -129,7 +124,7 @@ static UIButton *BarButton(NSString *title, unsigned background, unsigned foregr
         forControlEvents:UIControlEventTouchUpInside];
     [_saveButton addTarget:self action:@selector(saveLayout)
         forControlEvents:UIControlEventTouchUpInside];
-    UIStackView *topLeft = [[UIStackView alloc] initWithArrangedSubviews:@[title, _resetButton]];
+    UIStackView *topLeft = [[UIStackView alloc] initWithArrangedSubviews:@[title, buildTag, _resetButton]];
     topLeft.axis = UILayoutConstraintAxisHorizontal;
     topLeft.spacing = 10;
     topLeft.alignment = UIStackViewAlignmentCenter;
@@ -141,63 +136,24 @@ static UIButton *BarButton(NSString *title, unsigned background, unsigned foregr
     [self.view addSubview:topLeft];
     [self.view addSubview:topRight];
 
-    _detailTitle = MonoLabel(@"", 12, 0xE6B56B);
-    _detailMetrics = MonoLabel(@"", 10, 0x9FB6BC);
-    UISlider *slider;
-    slider = [[UISlider alloc] init]; slider.minimumValue = 0; slider.maximumValue = 1;
-    _xSlider = slider;
-    slider = [[UISlider alloc] init]; slider.minimumValue = 0; slider.maximumValue = 1;
-    _ySlider = slider;
-    slider = [[UISlider alloc] init]; slider.minimumValue = .03; slider.maximumValue = .6;
-    _wSlider = slider;
-    slider = [[UISlider alloc] init]; slider.minimumValue = .03; slider.maximumValue = .6;
-    _hSlider = slider;
-    for (UISlider *s in @[_xSlider, _ySlider, _wSlider, _hSlider]) {
-        s.minimumTrackTintColor = Ink(0xC99755);
-        s.thumbTintColor = Ink(0xE6B56B);
-        [s addTarget:self action:@selector(sliderChanged:) forControlEvents:UIControlEventValueChanged];
-    }
-    NSMutableArray<UIView *> *rows = [NSMutableArray new];
-    for (UISlider *s in @[_xSlider, _ySlider, _wSlider, _hSlider]) {
-        UIStackView *row = [[UIStackView alloc] initWithArrangedSubviews:@[s]];
-        row.axis = UILayoutConstraintAxisHorizontal;
-        [rows addObject:row];
-    }
-    UIStackView *text = [[UIStackView alloc] initWithArrangedSubviews:@[_detailTitle, _detailMetrics]];
-    text.axis = UILayoutConstraintAxisVertical;
-    text.spacing = 4;
-    _detailPanel = [[UIStackView alloc] initWithArrangedSubviews:@[text, rows[0], rows[1], rows[2], rows[3]]];
-    _detailPanel.axis = UILayoutConstraintAxisVertical;
-    _detailPanel.spacing = 6;
-    _detailPanel.backgroundColor = [Ink(0x101B1F) colorWithAlphaComponent:.92];
-    _detailPanel.layer.cornerRadius = 8;
-    _detailPanel.layer.borderWidth = 1;
-    _detailPanel.layer.borderColor = [Ink(0x243236) CGColor];
-    [self.view addSubview:_detailPanel];
-
-    // Overlay chrome: floating over the canvas (kept out of the pad's
-    // coordinate space so the canvas stays 1:1 with the in-game area).
-    for (UIView *view in @[_topLeft, _topRight, _detailPanel])
+    // The corner buttons float over the canvas corners and stay small, so
+    // they never cover the control area.
+    for (UIView *view in @[_topLeft, _topRight])
         view.translatesAutoresizingMaskIntoConstraints = NO;
     [NSLayoutConstraint activateConstraints:@[
         [_topLeft.topAnchor constraintEqualToAnchor:self.view.topAnchor constant:8],
         [_topLeft.leadingAnchor constraintEqualToAnchor:_canvas.leadingAnchor constant:12],
         [_topRight.topAnchor constraintEqualToAnchor:self.view.topAnchor constant:8],
         [_topRight.trailingAnchor constraintEqualToAnchor:_canvas.trailingAnchor constant:-12],
-        [_detailPanel.leadingAnchor constraintEqualToAnchor:_canvas.leadingAnchor constant:12],
-        [_detailPanel.trailingAnchor constraintEqualToAnchor:_canvas.trailingAnchor constant:-12],
-        [_detailPanel.bottomAnchor constraintEqualToAnchor:_canvas.bottomAnchor constant:-12],
     ]];
 
-    _selected = 0;
-    [self updateControlFramesAnimated:NO];
-    [self updateDetailPanel];
+    [self updateControlFrames];
 }
 
 - (void)viewDidLayoutSubviews {
     [super viewDidLayoutSubviews];
     _canvas.frame = UIEdgeInsetsInsetRect(self.view.bounds, self.view.safeAreaInsets);
-    [self updateControlFramesAnimated:NO];
+    [self updateControlFrames];
 }
 
 // Positions a control the same way the in-game pad does.
@@ -210,80 +166,25 @@ static UIButton *BarButton(NSString *title, unsigned background, unsigned foregr
     return CGRectMake(spec.x * area.size.width, spec.y * area.size.height, w, h);
 }
 
-- (void)updateControlFramesAnimated:(BOOL)animated {
-    if (_applyingSlider) return;
-    void (^updates)(void) = ^{
-        for (NSInteger i = 0; i < 17; ++i) {
-            UILabel *label = self->_controls[i];
-            label.frame = [self controlRectForIndex:i];
-            label.layer.cornerRadius = (i == 0) ? label.bounds.size.width / 2
-                                                : MIN(label.bounds.size.width, label.bounds.size.height) / 3;
-            label.text = self->_draft[i].label;
-            if (i == self->_selected) {
-                label.layer.borderColor = Ink(0xE6B56B).CGColor;
-                label.layer.borderWidth = 3;
-            } else {
-                label.layer.borderColor = [UIColor colorWithWhite:1 alpha:.55].CGColor;
-                label.layer.borderWidth = 1.5;
-            }
-        }
-    };
-    if (animated) [UIView animateWithDuration:.15 animations:updates];
-    else updates();
-}
-
-- (void)updateDetailPanel {
-    NSInteger i = _selected;
-    if (i < 0) return;
-    Theft4TouchControlSpec *spec = _draft[i];
-    _applyingSlider = YES;
-    _xSlider.minimumValue = 0;
-    _xSlider.maximumValue = MAX(0, 1 - spec.w);
-    _ySlider.minimumValue = 0;
-    _ySlider.maximumValue = MAX(0, 1 - spec.h);
-    _wSlider.value = spec.w;
-    _hSlider.value = spec.h;
-    _xSlider.value = ClampF(spec.x, 0, _xSlider.maximumValue);
-    _ySlider.value = ClampF(spec.y, 0, _ySlider.maximumValue);
-    _applyingSlider = NO;
-    _detailTitle.text = [NSString stringWithFormat:@"%@  —  DRAG OR USE SLIDERS", spec.label];
-    _detailMetrics.text = [NSString stringWithFormat:
-        @"X %.3f   Y %.3f   W %.3f   H %.3f   (0…1 of safe area)",
-        spec.x, spec.y, spec.w, spec.h];
-}
-
-- (void)selectControl:(UITapGestureRecognizer *)gesture {
-    _selected = (NSInteger)gesture.view.tag;
-    [self updateControlFramesAnimated:NO];
-    [self updateDetailPanel];
+- (void)updateControlFrames {
+    for (NSInteger i = 0; i < 17; ++i) {
+        UILabel *label = _controls[i];
+        label.frame = [self controlRectForIndex:i];
+        label.layer.cornerRadius = (i == 0) ? label.bounds.size.width / 2
+                                            : MIN(label.bounds.size.width, label.bounds.size.height) / 3;
+        label.text = _draft[i].label;
+    }
 }
 
 - (void)panControl:(UIPanGestureRecognizer *)gesture {
     NSInteger i = (NSInteger)gesture.view.tag;
-    if (gesture.state == UIGestureRecognizerStateChanged) {
-        CGPoint delta = [gesture translationInView:_canvas];
-        [gesture setTranslation:CGPointZero inView:_canvas];
-        Theft4TouchControlSpec *spec = _draft[i];
-        spec.x = ClampF(spec.x + delta.x / MAX(1, _canvas.bounds.size.width), 0, 1 - spec.w);
-        spec.y = ClampF(spec.y + delta.y / MAX(1, _canvas.bounds.size.height), 0, 1 - spec.h);
-        [self updateControlFramesAnimated:NO];
-        [self updateDetailPanel];
-    }
-}
-
-- (void)sliderChanged:(UISlider *)sender {
-    NSInteger i = _selected;
-    if (i < 0) return;
+    if (gesture.state != UIGestureRecognizerStateChanged) return;
+    CGPoint delta = [gesture translationInView:_canvas];
+    [gesture setTranslation:CGPointZero inView:_canvas];
     Theft4TouchControlSpec *spec = _draft[i];
-    BOOL stick = i == 0;
-    if (sender == _xSlider) spec.x = sender.value;
-    else if (sender == _ySlider) spec.y = sender.value;
-    else if (sender == _wSlider) { spec.w = sender.value; if (stick) spec.h = sender.value; }
-    else if (sender == _hSlider) { spec.h = sender.value; if (stick) spec.w = sender.value; }
-    spec.x = ClampF(spec.x, 0, 1 - spec.w);
-    spec.y = ClampF(spec.y, 0, 1 - spec.h);
-    [self updateControlFramesAnimated:NO];
-    [self updateDetailPanel];
+    spec.x = ClampF(spec.x + delta.x / MAX(1, _canvas.bounds.size.width), 0, 1 - spec.w);
+    spec.y = ClampF(spec.y + delta.y / MAX(1, _canvas.bounds.size.height), 0, 1 - spec.h);
+    [self updateControlFrames];
 }
 
 - (void)saveLayout {
@@ -308,8 +209,7 @@ static UIButton *BarButton(NSString *title, unsigned background, unsigned foregr
         handler:^(UIAlertAction *action) {
             [Theft4TouchLayout.shared resetToDefaults];
             [self rebuildDraft];
-            [self updateControlFramesAnimated:YES];
-            [self updateDetailPanel];
+            [self updateControlFrames];
         }]];
     [self presentViewController:alert animated:YES completion:nil];
 }
