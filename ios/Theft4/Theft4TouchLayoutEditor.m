@@ -61,14 +61,19 @@ static UIButton *BarButton(NSString *title, unsigned background, unsigned foregr
 }
 @end
 
-// The editor is a bare canvas: drag any control to move it, then SAVE.
-// No panels, no sliders — nothing sits between the finger and the controls.
+// The editor is a bare canvas: drag any control to move it, pinch a control
+// (or double-tap it for a temporary size slider) to resize it, then SAVE.
+// Tapping the empty canvas dismisses the size slider. No panels — nothing
+// sits between the finger and the controls.
 @interface Theft4TouchLayoutEditorViewController () {
     Theft4EditorCanvasView *_canvas;
     NSMutableArray<UILabel *> *_controls;
     NSMutableArray<Theft4TouchControlSpec *> *_draft;
     UIButton *_saveButton, *_resetButton, *_closeButton;
     UIStackView *_topLeft, *_topRight;
+    UISlider *_sizeSlider;
+    NSInteger _sizeSliderIndex;
+    CGFloat _sizeBaseW, _sizeBaseH;
 }
 @end
 
@@ -111,10 +116,23 @@ static UIButton *BarButton(NSString *title, unsigned background, unsigned foregr
         UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc]
             initWithTarget:self action:@selector(panControl:)];
         [label addGestureRecognizer:pan];
+        UIPinchGestureRecognizer *pinch = [[UIPinchGestureRecognizer alloc]
+            initWithTarget:self action:@selector(pinchControl:)];
+        [label addGestureRecognizer:pinch];
+        UITapGestureRecognizer *doubleTap = [[UITapGestureRecognizer alloc]
+            initWithTarget:self action:@selector(doubleTapControl:)];
+        doubleTap.numberOfTapsRequired = 2;
+        [label addGestureRecognizer:doubleTap];
+        UITapGestureRecognizer *singleTap = [[UITapGestureRecognizer alloc]
+            initWithTarget:self action:@selector(dismissSizeSlider:)];
+        [label addGestureRecognizer:singleTap];
     }
+    UITapGestureRecognizer *canvasTap = [[UITapGestureRecognizer alloc]
+        initWithTarget:self action:@selector(dismissSizeSlider:)];
+    [_canvas addGestureRecognizer:canvasTap];
 
     UILabel *title = MonoLabel(@"TOUCH LAYOUT EDITOR", 12, 0xE6B56B);
-    UILabel *buildTag = MonoLabel(@"BUILD 147", 10, 0x5F7176);
+    UILabel *buildTag = MonoLabel(@"BUILD 148", 10, 0x5F7176);
     _closeButton = BarButton(@"CLOSE", 0x243236, 0xE5DECA, NO);
     _resetButton = BarButton(@"RESET", 0x243236, 0xE5DECA, NO);
     _saveButton = BarButton(@"SAVE", 0xE6B56B, 0x111B1D, YES);
@@ -185,6 +203,69 @@ static UIButton *BarButton(NSString *title, unsigned background, unsigned foregr
     spec.x = ClampF(spec.x + delta.x / MAX(1, _canvas.bounds.size.width), 0, 1 - spec.w);
     spec.y = ClampF(spec.y + delta.y / MAX(1, _canvas.bounds.size.height), 0, 1 - spec.h);
     [self updateControlFrames];
+}
+
+// Pinch scales the control under the fingers, proportionally.
+- (void)pinchControl:(UIPinchGestureRecognizer *)gesture {
+    if (gesture.state != UIGestureRecognizerStateChanged) return;
+    NSInteger i = (NSInteger)gesture.view.tag;
+    CGFloat s = gesture.scale;
+    gesture.scale = 1;
+    if (s <= 0.01 || s >= 100) return;
+    Theft4TouchControlSpec *spec = _draft[i];
+    spec.w = ClampF(spec.w * s, 0.015, 0.95);
+    spec.h = ClampF(spec.h * s, 0.015, 0.95);
+    [self updateControlFrames];
+}
+
+// Double-tap opens a small size slider anchored near the selected control.
+- (void)doubleTapControl:(UITapGestureRecognizer *)gesture {
+    [self showSizeSliderForIndex:(NSInteger)gesture.view.tag];
+}
+
+- (void)showSizeSliderForIndex:(NSInteger)i {
+    if (i < 0 || i >= (NSInteger)_draft.count) return;
+    _sizeSliderIndex = i;
+    Theft4TouchControlSpec *spec = _draft[i];
+    _sizeBaseW = spec.w;
+    _sizeBaseH = spec.h;
+    if (!_sizeSlider) {
+        _sizeSlider = [UISlider new];
+        _sizeSlider.minimumValue = 0.25;
+        _sizeSlider.maximumValue = 3.0;
+        _sizeSlider.minimumValueImage =
+            [[UIImage imageWithSystemName:@"minus"] imageWithTintColor:Ink(0xE5DECA)
+                renderingMode:UIImageRenderingModeAlwaysOriginal];
+        [_sizeSlider addTarget:self action:@selector(sizeSliderChanged:)
+            forControlEvents:UIControlEventValueChanged];
+        [_canvas addSubview:_sizeSlider];
+    }
+    _sizeSlider.hidden = NO;
+    _sizeSlider.value = 1.0;
+    CGRect r = [self controlRectForIndex:i];
+    CGFloat w = MIN(220, MAX(120, r.size.width * 2));
+    CGFloat x = r.origin.x + (r.size.width - w) / 2;
+    CGFloat y = r.origin.y + r.size.height + 10;
+    if (y + 32 > _canvas.bounds.size.height) y = r.origin.y - 42;
+    x = ClampF(x, 4, MAX(4, _canvas.bounds.size.width - w - 4));
+    y = ClampF(y, 4, MAX(4, _canvas.bounds.size.height - 36));
+    _sizeSlider.frame = CGRectMake(x, y, w, 30);
+    [_canvas bringSubviewToFront:_sizeSlider];
+}
+
+- (void)sizeSliderChanged:(UISlider *)slider {
+    if (_sizeSliderIndex < 0 || _sizeSliderIndex >= (NSInteger)_draft.count) return;
+    CGFloat v = slider.value;
+    Theft4TouchControlSpec *spec = _draft[_sizeSliderIndex];
+    spec.w = ClampF(_sizeBaseW * v, 0.015, 0.95);
+    spec.h = ClampF(_sizeBaseH * v, 0.015, 0.95);
+    [self updateControlFrames];
+}
+
+// Tapping anywhere else (canvas or a control) hides the size slider.
+- (void)dismissSizeSlider:(UITapGestureRecognizer *)gesture {
+    _sizeSlider.hidden = YES;
+    _sizeSliderIndex = -1;
 }
 
 - (void)saveLayout {
