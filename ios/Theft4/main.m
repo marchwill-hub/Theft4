@@ -81,21 +81,6 @@ static NSString *Theft4DisplayName(void) {
     return name.length ? name : @"Theft4";
 }
 
-// Displays whose aspect does not match the standard phone/iPad families
-// (4:3, 16:9, 19.5:9, 20:9 within 0.06) — e.g. the 2670x1878 iPhone Duo
-// foldable (1.42:1). These are handled natively end to end instead of the
-// classic centered-16:9 / fixed-1080p presentation paths.
-static BOOL Theft4DisplayIsNonStandardAspect(void) {
-    const CGSize screen = [UIScreen mainScreen].bounds.size;
-    const CGFloat ratio = (screen.height > 0)
-        ? MAX(screen.width / screen.height, screen.height / screen.width)
-        : 16.0 / 9.0;
-    const CGFloat standardRatios[] = {4.0 / 3.0, 16.0 / 9.0, 19.5 / 9.0, 20.0 / 9.0};
-    for (size_t i = 0; i < 4; ++i)
-        if (fabs(ratio - standardRatios[i]) < 0.06) return NO;
-    return YES;
-}
-
 static NSString *Theft4SetupCompleteDefaultsKey(void) {
 #ifdef THEFT4_INTRO_TEST_BUILD
     return @"Theft4IntroTestSetupComplete";
@@ -857,23 +842,8 @@ static void bootEvent(void *context, const char *event) {
     [_bringupOverlay.customTimeCycle addTarget:self action:@selector(customTimeCycleChanged:)
         forControlEvents:UIControlEventValueChanged];
 #ifdef THEFT4_HAS_GTA4_NATIVE_BACKEND
-    {
-        NSUserDefaults *nativeAspectDefaults = NSUserDefaults.standardUserDefaults;
-        BOOL userChose = [nativeAspectDefaults boolForKey:@"Theft4ModNativeAspectUserSet"];
-        BOOL nativeAspectOn = [nativeAspectDefaults boolForKey:@"Theft4ModNativeAspect"];
-        if (!userChose) {
-            // Auto-pick the frame that fits the display, on every launch
-            // until the user flips the switch explicitly: unusual aspect
-            // displays (e.g. the 2670x1878 iPhone Duo foldable, 1.42:1)
-            // present best in a native-aspect frame; standard 16:9, 19.5:9
-            // and 20:9 iPhones and 4:3 iPads keep the classic centered
-            // 16:9. This also migrates installs that predate the auto
-            // default, whose stored value forced the classic frame.
-            nativeAspectOn = Theft4DisplayIsNonStandardAspect();
-            [nativeAspectDefaults setBool:nativeAspectOn forKey:@"Theft4ModNativeAspect"];
-        }
-        _bringupOverlay.nativeAspect.on = nativeAspectOn;
-    }
+    _bringupOverlay.nativeAspect.on = [NSUserDefaults.standardUserDefaults
+        boolForKey:@"Theft4ModNativeAspect"];
 #else
     _bringupOverlay.nativeAspect.enabled = NO;
 #endif
@@ -914,13 +884,18 @@ static void bootEvent(void *context, const char *event) {
         toggle.on = [NSUserDefaults.standardUserDefaults boolForKey:keys[i]];
         [toggle addTarget:self action:@selector(displaySettingsChanged:) forControlEvents:UIControlEventValueChanged];
     }
-    // Unusual-aspect displays (e.g. the iPhone Duo foldable) present best at
-    // full native resolution: default the FSR upscaled output on until the
-    // user chooses otherwise.
-    if (Theft4DisplayIsNonStandardAspect() &&
-        ![NSUserDefaults.standardUserDefaults objectForKey:@"Theft4EnhancedOutput1080p"]) {
-        _enhancedOutput.on = YES;
-        [NSUserDefaults.standardUserDefaults setBool:YES forKey:@"Theft4EnhancedOutput1080p"];
+    // One-time migration (build 149): an earlier fork build auto-enabled the
+    // FSR "enhanced output" default on this device while experimenting with
+    // display aspect handling. Restore the stock v0.3.2 default (off) so the
+    // launch path matches the original build exactly. Runs once; afterwards
+    // the user's own choice is respected.
+    {
+        NSUserDefaults *displayDefaults = NSUserDefaults.standardUserDefaults;
+        if ([displayDefaults objectForKey:@"Theft4EnhancedOutput1080p"] &&
+            ![displayDefaults boolForKey:@"Theft4MigratedFSRDefault149"]) {
+            [displayDefaults setBool:NO forKey:@"Theft4EnhancedOutput1080p"];
+            [displayDefaults setBool:YES forKey:@"Theft4MigratedFSRDefault149"];
+        }
     }
     [self resetAutomaticCaptureForNewSession];
     [_performanceCapture addTarget:self action:@selector(displaySettingsChanged:)
@@ -1993,7 +1968,6 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
 - (void)nativeAspectChanged:(UISwitch *)sender {
     if (_executionAttempted) return;
     [NSUserDefaults.standardUserDefaults setBool:sender.on forKey:@"Theft4ModNativeAspect"];
-    [NSUserDefaults.standardUserDefaults setBool:YES forKey:@"Theft4ModNativeAspectUserSet"];
     [self updateGameAspect];
     [self.view layoutIfNeeded];
     [_bringupOverlay refreshConfigurationSummary];
@@ -3169,10 +3143,8 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
                 _bringupOverlay.renderResolution ? _bringupOverlay.renderHeight : 720,
                 _bringupOverlay.renderResolution ? _bringupOverlay.fsrUpscaling.on : _enhancedOutput.on,
                 nativeWidth, nativeHeight,
-                ((strcmp(getenv("THEFT4_DEVICE_PROFILE") ?: "", "a19") == 0) ||
-                 _limitedMemoryProfile ||
-                 (!_bringupOverlay.renderResolution && !_fsrBoost.on)) &&
-                !Theft4DisplayIsNonStandardAspect(),
+                strcmp(getenv("THEFT4_DEVICE_PROFILE") ?: "", "a19") == 0 || _limitedMemoryProfile ||
+                    (!_bringupOverlay.renderResolution && !_fsrBoost.on),
                 bounds.width > 0 ? safe.left / bounds.width : 0,
                 bounds.height > 0 ? safe.top / bounds.height : 0,
                 bounds.width > 0 ? safe.right / bounds.width : 0,
