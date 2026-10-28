@@ -842,6 +842,20 @@ static void bootEvent(void *context, const char *event) {
     [_bringupOverlay.customTimeCycle addTarget:self action:@selector(customTimeCycleChanged:)
         forControlEvents:UIControlEventValueChanged];
 #ifdef THEFT4_HAS_GTA4_NATIVE_BACKEND
+    // One-time default (build 150): on the iPhone Duo native 2670x1878 panel,
+    // seed the stock "NATIVE ASPECT RATIO" mod to on so the app opens at the
+    // screen's native shape (each screen format on its own launch). This only
+    // seeds the stock setting when the user has never chosen it explicitly;
+    // an explicit off is respected forever, and the stock native-aspect launch
+    // path is used unchanged.
+    if (![NSUserDefaults.standardUserDefaults objectForKey:@"Theft4ModNativeAspect"]) {
+        const CGSize native = [UIScreen mainScreen].nativeBounds.size;
+        const BOOL dualPanelDisplay =
+            (native.width == 2670 && native.height == 1878) ||
+            (native.width == 1878 && native.height == 2670);
+        if (dualPanelDisplay)
+            [NSUserDefaults.standardUserDefaults setBool:YES forKey:@"Theft4ModNativeAspect"];
+    }
     _bringupOverlay.nativeAspect.on = [NSUserDefaults.standardUserDefaults
         boolForKey:@"Theft4ModNativeAspect"];
 #else
