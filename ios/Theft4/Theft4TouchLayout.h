@@ -1,4 +1,5 @@
 #import <Foundation/Foundation.h>
+#import <CoreGraphics/CoreGraphics.h>
 
 // Posted (main thread) whenever the shared touch layout model changes.
 FOUNDATION_EXPORT NSNotificationName const Theft4TouchLayoutDidChangeNotification;
