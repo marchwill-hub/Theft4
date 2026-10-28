@@ -267,8 +267,10 @@ static UIButton *BarButton(NSString *title, unsigned background, unsigned foregr
     _settingsBar.axis = UILayoutConstraintAxisHorizontal;
     _settingsBar.spacing = 10;
     _settingsBar.alignment = UIStackViewAlignmentCenter;
-    _settingsBar.isLayoutMarginsRelativeArrangement = YES;
-    _settingsBar.layoutMargins = NSDirectionalEdgeInsetsMake(8, 12, 8, 12);
+    if ([_settingsBar respondsToSelector:@selector(setIsLayoutMarginsRelativeArrangement:)]) {
+        [_settingsBar setIsLayoutMarginsRelativeArrangement:YES];
+    }
+    _settingsBar.layoutMargins = UIEdgeInsetsMake(8, 12, 8, 12);
     _settingsBar.backgroundColor =
         [Ink(0x0A1418) colorWithAlphaComponent:.92];
     _settingsBar.layer.cornerRadius = 8;
