@@ -22,7 +22,11 @@ concurrency:
 jobs:
   ipa:
     name: Theft4 iOS IPA
-    runs-on: macos-26
+    # Xcode 27 (iOS 27 SDK): required so the app fills the iPhone Duo inner
+    # display. Apps built with the iOS 26 SDK or earlier run in a centered
+    # window with empty space around them on iPhone Duo (Apple guidance);
+    # the official upstream IPA is built with the iOS 27.0 SDK.
+    runs-on: xcode-27
     timeout-minutes: 420
     env:
       DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
@@ -45,6 +49,14 @@ jobs:
           brew list --versions cmake &>/dev/null || brew install --quiet cmake
           brew list --versions ninja &>/dev/null || brew install --quiet ninja
 
+      - name: Show Xcode and SDKs (must be iOS 27 for iPhone Duo full-screen)
+        run: |
+          xcode-select -p
+          xcodebuild -version
+          xcodebuild -showsdks | grep -E 'iphoneos|macosx' || true
+          test "$(xcodebuild -showsdks | grep -c 'iphoneos27')" -ge 1 \
+            || { echo "FATAL: no iOS 27 SDK on this runner (iPhone Duo needs it)"; exit 1; }
+
       # The iOS preset validates an embedded game payload (default.xex + the
       # three core RPFs) at configure time; the IPA itself does not bundle
       # game files (the launcher's folder picker supplies them at runtime).
@@ -62,7 +74,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: out/direct-metal
-          key: metal-ios-${{ hashFiles('tools/direct-metal/**', 'LibertyRecompLib/shader/**') }}
+          key: metal-ios-27-${{ hashFiles('tools/direct-metal/**', 'LibertyRecompLib/shader/**') }}
 
       - name: Metal shader corpus (cached)
         if: steps.metal.outputs.cache-hit != 'true'
@@ -134,9 +146,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: out/build/ios-device-release
-          key: ipa-build-150-${{ github.sha }}
+          key: ipa-build-151-${{ github.sha }}
           restore-keys: |
-            ipa-build-150-
+            ipa-build-151-
 
       - name: Configure (ios-device-release)
         run: |
@@ -192,12 +204,12 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: out/build/ios-device-release
-          key: ipa-build-150-${{ github.sha }}
+          key: ipa-build-151-${{ github.sha }}
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: Theft4-0.3.2-145-touch-layout-ipa
+          name: Theft4-0.3.2-151-touch-layout-ipa
           path: |
             dist/*.ipa
             dist/sha256sums.txt
