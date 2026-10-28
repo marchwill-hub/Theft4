@@ -50,6 +50,12 @@ static inline UIColor *PadAmber(void) {
                          alpha:1.0];
 }
 
+// Context color for the camera-stick ring: amber while it steers (drive
+// context), white while it aims or sits neutral.
+static inline UIColor *CameraStickColor(BOOL steering) {
+    return steering ? PadAmber() : [UIColor colorWithWhite:1 alpha:.55];
+}
+
 @interface Theft4TouchControls () {
     NSMutableArray<UILabel *> *_labels;
     NSMutableArray<UIView *> *_glows;
@@ -80,6 +86,9 @@ static inline UIColor *PadAmber(void) {
     CGFloat _fixedMaxTravel;
     NSInteger _r3TapFrames;
     CGRect _fixedStickRect;
+    // Contextual stick roles (build 153).
+    BOOL _driveContext; // RT or LT held
+    BOOL _aimContext;   // X (aim) held
 }
 @end
 
@@ -217,6 +226,7 @@ static inline UIColor *PadAmber(void) {
     _lookX = _lookY = 0;
     _r3TapFrames = 0;
     _floatMaxTravel = _fixedMaxTravel = 0;
+    _driveContext = _aimContext = NO;
     for (NSInteger i = 0; i < kPadControlCount; ++i) {
         if (_glowOn[i]) [self setPressedVisual:i pressed:NO];
         _glowOn[i] = NO;
@@ -376,11 +386,20 @@ static inline UIColor *PadAmber(void) {
             [self setPressedVisual:i pressed:pressed[i]];
         }
     }
+    // Contextual stick roles (build 153): X (aim) held = aim context;
+    // RT/LT held = drive context. The camera stick follows the active
+    // context, updated on every press/hold/release pass.
+    _aimContext = (state.buttons & 0x4000) != 0;
+    _driveContext = (state.right_trigger > 0) || (state.left_trigger > 0);
     return state;
 }
 
-// While a floating/fixed stick is held, the right axis is the direct analog
-// vector (like a physical gamepad).
+// While a floating/fixed stick is held it is the direct analog vector (like
+// a physical gamepad). Role by context (build 153):
+//   X (aim) held, or neutral  -> aims the camera (rx/ry);
+//   RT/LT held without aim    -> steers the vehicle (lx/ly): acceleration /
+//   reverse keep coming from the triggers, so throttle, reverse and steering
+//   act as three independent inputs at once (like the physical controller).
 - (void)applyCameraStickToState:(theft4_touch_pad *)state {
     for (UITouch *touch in _captures) {
         NSInteger kind = [[_captures objectForKey:touch] integerValue];
@@ -394,9 +413,21 @@ static inline UIColor *PadAmber(void) {
         CGFloat dx = p.x - origin.x, dy = p.y - origin.y;
         CGFloat mag = hypot(dx, dy);
         CGFloat norm = MIN(1.0, mag / radius);
-        if (mag > 0) {
-            state->rx = (int16_t)lround(dx / mag * norm * 32767);
-            state->ry = (int16_t)lround(-dy / mag * norm * 32767);
+        CGFloat vx = (mag > 0) ? dx / mag * norm : 0.0;
+        CGFloat vy = (mag > 0) ? -dy / mag * norm : 0.0;
+        if (_driveContext && !_aimContext) {
+            // Steer: left-axis analog. Same arbitration as the stock
+            // MergeStick — the larger deflection wins, so a simultaneously
+            // held movement pad is never silently clobbered.
+            int16_t sx = (int16_t)lround(vx * 32767);
+            int16_t sy = (int16_t)lround(vy * 32767);
+            int64_t stickMag = (int64_t)sx * sx + (int64_t)sy * sy;
+            int64_t curMag = (int64_t)state->lx * state->lx +
+                             (int64_t)state->ly * state->ly;
+            if (stickMag > curMag) { state->lx = sx; state->ly = sy; }
+        } else {
+            state->rx = (int16_t)lround(vx * 32767);
+            state->ry = (int16_t)lround(vy * 32767);
         }
         [self placeCameraStickAt:origin animate:NO knobOffset:CGPointMake(dx, dy)
             radius:radius];
@@ -458,6 +489,8 @@ static inline UIColor *PadAmber(void) {
     _rightBase.layer.cornerRadius = d / 2;
     _rightKnob.bounds = CGRectMake(0, 0, d * 0.36, d * 0.36);
     _rightKnob.layer.cornerRadius = d * 0.18;
+    _rightBase.layer.borderColor =
+        CameraStickColor(_driveContext && !_aimContext).CGColor;
     _rightBase.hidden = NO;
     _rightKnob.hidden = NO;
     if (radius > 0) {
@@ -490,6 +523,8 @@ static inline UIColor *PadAmber(void) {
     if (_stickMode == Theft4TouchRightStickModeFixed) {
         // The permanent circle stays; only the knob animates back to center.
         _rightBase.center = _fixedStickRect.center;
+        _rightBase.layer.borderColor =
+            CameraStickColor(_driveContext && !_aimContext).CGColor;
         _rightBase.alpha = 0.55;
         [UIView animateWithDuration:0.12 animations:^{
             _rightKnob.center = _fixedStickRect.center;
@@ -498,10 +533,12 @@ static inline UIColor *PadAmber(void) {
         return;
     }
     if (_stickMode == Theft4TouchRightStickModeFloating) {
-        // Idle: faint affordance ring at the rest position.
+        // Idle: faint affordance ring at the rest position (brighter —
+        // "armed" — while a trigger is held and the stick steers).
         [UIView animateWithDuration:0.12 animations:^{
             _rightBase.center = [Theft4TouchLayout floatingRestCenterInArea:area];
-            _rightBase.alpha = kFloatingGhostAlpha;
+            _rightBase.alpha = (_driveContext && !_aimContext)
+                ? 0.30 : kFloatingGhostAlpha;
             _rightKnob.alpha = 0;
         }];
         return;
@@ -530,22 +567,27 @@ static inline UIColor *PadAmber(void) {
         return;
     }
     if (stickHeld) return; // placeCameraStickAt drives the visuals while held
+    BOOL steering = _driveContext && !_aimContext;
     CGFloat d = [Theft4TouchLayout rightStickDiameterForArea:area];
     _rightBase.bounds = CGRectMake(0, 0, d, d);
     _rightBase.layer.cornerRadius = d / 2;
     _rightKnob.bounds = CGRectMake(0, 0, d * 0.36, d * 0.36);
     _rightKnob.layer.cornerRadius = d * 0.18;
+    _rightBase.layer.borderColor = CameraStickColor(steering).CGColor;
     _rightBase.hidden = NO;
-    _rightKnob.hidden = NO;
     if (_stickMode == Theft4TouchRightStickModeFixed) {
+        _rightKnob.hidden = NO;
         _rightBase.center = _fixedStickRect.center;
         _rightKnob.center = _fixedStickRect.center;
         _rightBase.alpha = 0.55;
         _rightKnob.alpha = 0.55;
         return;
     }
+    _rightKnob.hidden = NO;
     _rightBase.center = [Theft4TouchLayout floatingRestCenterInArea:area];
-    _rightBase.alpha = kFloatingGhostAlpha;
+    // Armed (a trigger is held): the ghost ring brightens to invite the
+    // steering touch.
+    _rightBase.alpha = steering ? 0.30 : kFloatingGhostAlpha;
     _rightKnob.alpha = 0;
 }
 - (void)touchLayoutDidChange { [self setNeedsLayout]; }
