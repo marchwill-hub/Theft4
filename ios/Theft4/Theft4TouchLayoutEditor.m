@@ -132,7 +132,7 @@ static UIButton *BarButton(NSString *title, unsigned background, unsigned foregr
     [_canvas addGestureRecognizer:canvasTap];
 
     UILabel *title = MonoLabel(@"TOUCH LAYOUT EDITOR", 12, 0xE6B56B);
-    UILabel *buildTag = MonoLabel(@"BUILD 150", 10, 0x5F7176);
+    UILabel *buildTag = MonoLabel(@"BUILD 151", 10, 0x5F7176);
     _closeButton = BarButton(@"CLOSE", 0x243236, 0xE5DECA, NO);
     _resetButton = BarButton(@"RESET", 0x243236, 0xE5DECA, NO);
     _saveButton = BarButton(@"SAVE", 0xE6B56B, 0x111B1D, YES);
