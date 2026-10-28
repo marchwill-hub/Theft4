@@ -9,7 +9,7 @@
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>0.3.2</string>
     <key>Theft4ReleaseName</key><string>0.3.2</string>
-    <key>CFBundleVersion</key><string>152</string>
+    <key>CFBundleVersion</key><string>153</string>
     <key>Theft4SourceRevision</key><string>${THEFT4_RENDER_SOURCE_REVISION}</string>
     <!-- Declares App Store export-compliance status for standard/exempt crypto only. -->
     <key>ITSAppUsesNonExemptEncryption</key><false/>
