@@ -41,11 +41,34 @@ static const NSInteger kControlCount = 17;
 }
 @end
 
+@implementation Theft4TouchLayoutSettings
+- (instancetype)init {
+    if ((self = [super init])) {
+        // Approved Touch Pad v2 defaults (mockup sign-off, 2026-10-28).
+        _opacity = 0.45;
+        _rightStickMode = Theft4TouchRightStickModeFloating;
+        _hapticsEnabled = YES;
+        _pressAnimationEnabled = YES;
+    }
+    return self;
+}
+- (instancetype)copyOfSelf {
+    Theft4TouchLayoutSettings *copy = [Theft4TouchLayoutSettings new];
+    copy.opacity = self.opacity;
+    copy.rightStickMode = self.rightStickMode;
+    copy.hapticsEnabled = self.hapticsEnabled;
+    copy.pressAnimationEnabled = self.pressAnimationEnabled;
+    return copy;
+}
+@end
+
 @interface Theft4TouchLayout () {
     NSMutableArray<Theft4TouchControlSpec *> *_specs;
     NSInteger _revision;
+    Theft4TouchLayoutSettings *_settings;
 }
 + (NSString *)storagePath;
++ (NSString *)settingsPath;
 @end
 
 @implementation Theft4TouchLayout
@@ -78,15 +101,24 @@ static const NSInteger kControlCount = 17;
     [[NSFileManager defaultManager] createDirectoryAtURL:dir
                               withIntermediateDirectories:YES
                                                attributes:nil
-                                                    error:nil];
+                                                  error:nil];
     return [[dir URLByAppendingPathComponent:@"touch_layout.json"] path];
+}
+
++ (NSString *)settingsPath {
+    return [[NSURL fileURLWithPath:NSHomeDirectory()]
+        URLByAppendingPathComponent:@"Library/Application Support/Theft4/touch_settings.json"]
+        path];
 }
 
 - (instancetype)init {
     if ((self = [super init])) {
         _specs = [[self.class defaultSpecs] mutableCopy];
+        _settings = [Theft4TouchLayoutSettings new];
         NSArray *saved = [self readSavedSpecs];
         if (saved.count == kControlCount) _specs = [saved mutableCopy];
+        Theft4TouchLayoutSettings *savedSettings = [self readSavedSettings];
+        if (savedSettings) _settings = savedSettings;
     }
     return self;
 }
@@ -157,5 +189,69 @@ static const NSInteger kControlCount = 17;
     _revision += 1;
     [[NSNotificationCenter defaultCenter]
         postNotificationName:Theft4TouchLayoutDidChangeNotification object:self];
+}
+
+- (Theft4TouchLayoutSettings *)readSavedSettings {
+    NSData *data = [NSData dataWithContentsOfFile:[self.class settingsPath]];
+    if (!data) return nil;
+    id parsed = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+    if (![parsed isKindOfClass:[NSDictionary class]]) return nil;
+    NSDictionary *row = parsed;
+    if (row[@"opacity"] == nil) return nil;
+    Theft4TouchLayoutSettings *settings = [Theft4TouchLayoutSettings new];
+    settings.opacity = MIN(0.90, MAX(0.10, [row[@"opacity"] doubleValue]));
+    NSInteger mode = [row[@"rightStickMode"] integerValue];
+    if (mode < 0 || mode > 2) return nil;
+    settings.rightStickMode = (Theft4TouchRightStickMode)mode;
+    settings.hapticsEnabled = [row[@"hapticsEnabled"] boolValue];
+    // Legacy files predate the glow flag; treat absence as "on" (v2 default).
+    settings.pressAnimationEnabled = row[@"pressAnimationEnabled"]
+        ? [row[@"pressAnimationEnabled"] boolValue] : YES;
+    return settings;
+}
+
+- (void)saveSettings:(Theft4TouchLayoutSettings *)settings {
+    if (!settings) return;
+    _settings = [settings copyOfSelf];
+    _settings.opacity = MIN(0.90, MAX(0.10, _settings.opacity));
+    if (_settings.rightStickMode > Theft4TouchRightStickModeOff)
+        _settings.rightStickMode = Theft4TouchRightStickModeFloating;
+    _revision += 1;
+    NSDictionary *row = @{
+        @"opacity": @(_settings.opacity),
+        @"rightStickMode": @(_settings.rightStickMode),
+        @"hapticsEnabled": @(_settings.hapticsEnabled),
+        @"pressAnimationEnabled": @(_settings.pressAnimationEnabled),
+    };
+    NSURL *dir = [[NSURL fileURLWithPath:[self.class settingsPath]] URLDeletingLastPathComponent];
+    [[NSFileManager defaultManager] createDirectoryAtURL:dir
+                              withIntermediateDirectories:YES
+                                               attributes:nil
+                                                  error:nil];
+    NSData *data = [NSJSONSerialization dataWithJSONObject:row options:0 error:nil];
+    [data writeToFile:[self.class settingsPath] atomically:YES];
+    [[NSNotificationCenter defaultCenter]
+        postNotificationName:Theft4TouchLayoutDidChangeNotification object:self];
+}
+
+- (void)resetSettingsToDefaults {
+    [[NSFileManager defaultManager] removeItemAtPath:[self.class settingsPath] error:nil];
+    [self saveSettings:[Theft4TouchLayoutSettings new]];
+}
+@end
+
+@implementation Theft4TouchLayout (RightStickGeometry)
++ (CGFloat)rightStickDiameterForArea:(CGRect)area {
+    return MAX(120.0, MIN(area.size.width, area.size.height) * 0.20);
+}
++ (CGPoint)floatingRestCenterInArea:(CGRect)area {
+    return CGPointMake(area.origin.x + area.size.width * 0.77,
+                       area.origin.y + area.size.height * 0.285);
+}
++ (CGRect)fixedStickRectInArea:(CGRect)area {
+    CGFloat d = [self rightStickDiameterForArea:area];
+    CGPoint center = CGPointMake(area.origin.x + area.size.width * 0.685,
+                                 area.origin.y + area.size.height * 0.30);
+    return CGRectMake(center.x - d / 2.0, center.y - d / 2.0, d, d);
 }
 @end
