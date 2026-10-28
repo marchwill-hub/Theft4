@@ -13,6 +13,10 @@ static CGFloat ClampF(CGFloat v, CGFloat lo, CGFloat hi) {
     return MIN(hi, MAX(lo, v));
 }
 
+static inline UIColor *PadAmberColor(void) {
+    return Ink(0xE6B56B);
+}
+
 static UILabel *MonoLabel(NSString *text, CGFloat size, unsigned color) {
     UILabel *label = [UILabel new];
     label.text = text;
@@ -74,6 +78,16 @@ static UIButton *BarButton(NSString *title, unsigned background, unsigned foregr
     UISlider *_sizeSlider;
     NSInteger _sizeSliderIndex;
     CGFloat _sizeBaseW, _sizeBaseH;
+    // Touch Pad v2 settings bar (live preview + live persistence).
+    UIStackView *_settingsBar;
+    UISlider *_opacitySlider;
+    UILabel *_opacityValue;
+    UISegmentedControl *_stickMode;
+    UIButton *_hapticsButton;
+    UIButton *_glowButton;
+    UIView *_fixedGhost;
+    UIView *_floatingGhost;
+    UILabel *_floatingHint;
 }
 @end
 
@@ -131,8 +145,13 @@ static UIButton *BarButton(NSString *title, unsigned background, unsigned foregr
         initWithTarget:self action:@selector(dismissSizeSlider:)];
     [_canvas addGestureRecognizer:canvasTap];
 
+    [self buildSettingsBar];
+    [[NSNotificationCenter defaultCenter]
+        addObserver:self selector:@selector(settingsChanged)
+               name:Theft4TouchLayoutDidChangeNotification object:nil];
+
     UILabel *title = MonoLabel(@"TOUCH LAYOUT EDITOR", 12, 0xE6B56B);
-    UILabel *buildTag = MonoLabel(@"BUILD 151", 10, 0x5F7176);
+    UILabel *buildTag = MonoLabel(@"BUILD 152", 10, 0x5F7176);
     _closeButton = BarButton(@"CLOSE", 0x243236, 0xE5DECA, NO);
     _resetButton = BarButton(@"RESET", 0x243236, 0xE5DECA, NO);
     _saveButton = BarButton(@"SAVE", 0xE6B56B, 0x111B1D, YES);
@@ -185,13 +204,195 @@ static UIButton *BarButton(NSString *title, unsigned background, unsigned foregr
 }
 
 - (void)updateControlFrames {
+    CGFloat op = Theft4TouchLayout.shared.settings.opacity;
     for (NSInteger i = 0; i < 17; ++i) {
         UILabel *label = _controls[i];
         label.frame = [self controlRectForIndex:i];
         label.layer.cornerRadius = (i == 0) ? label.bounds.size.width / 2
                                             : MIN(label.bounds.size.width, label.bounds.size.height) / 3;
         label.text = _draft[i].label;
+        // Same opacity-scaled styling as the in-game pad.
+        label.backgroundColor = [UIColor colorWithWhite:0 alpha:0.55 * op];
+        label.layer.borderColor =
+            [UIColor colorWithWhite:1 alpha:MIN(1.0, 1.22 * op)].CGColor;
     }
+}
+
+// --- Touch Pad v2 settings bar -------------------------------------------
+- (void)buildSettingsBar {
+    Theft4TouchLayoutSettings *s = Theft4TouchLayout.shared.settings;
+    _opacitySlider = [UISlider new];
+    _opacitySlider.minimumValue = 0.10;
+    _opacitySlider.maximumValue = 0.90;
+    _opacitySlider.value = s.opacity;
+    _opacitySlider.translatesAutoresizingMaskIntoConstraints = NO;
+    [_opacitySlider.widthAnchor constraintEqualToConstant:160].active = YES;
+    [_opacitySlider addTarget:self action:@selector(opacitySliderChanged:)
+        forControlEvents:UIControlEventValueChanged];
+    _opacityValue = MonoLabel(@"", 11, 0xE5DECA);
+
+    _stickMode = [[UISegmentedControl alloc]
+        initWithItems:@[@"FLOAT", @"FIXED", @"OFF"]];
+    _stickMode.selectedSegmentIndex = (NSInteger)s.rightStickMode;
+    _stickMode.translatesAutoresizingMaskIntoConstraints = NO;
+    [_stickMode.widthAnchor constraintEqualToConstant:210].active = YES;
+    [_stickMode addTarget:self action:@selector(stickModeChanged:)
+        forControlEvents:UIControlEventValueChanged];
+
+    _hapticsButton =
+        BarButton(s.hapticsEnabled ? @"HAPTICS: ON" : @"HAPTICS: OFF",
+                  s.hapticsEnabled ? 0x243236 : 0x3A2B22, 0xE5DECA, NO);
+    [_hapticsButton addTarget:self action:@selector(toggleHaptics:)
+        forControlEvents:UIControlEventTouchUpInside];
+    _glowButton =
+        BarButton(s.pressAnimationEnabled ? @"GLOW: ON" : @"GLOW: OFF",
+                  s.pressAnimationEnabled ? 0x243236 : 0x3A2B22, 0xE5DECA, NO);
+    [_glowButton addTarget:self action:@selector(toggleGlow:)
+        forControlEvents:UIControlEventTouchUpInside];
+    UIButton *resetPad = BarButton(@"RESET PAD", 0x243236, 0xE5DECA, NO);
+    [resetPad addTarget:self action:@selector(confirmResetPadSettings)
+        forControlEvents:UIControlEventTouchUpInside];
+
+    _settingsBar = [[UIStackView alloc] initWithArrangedSubviews:@[
+        MonoLabel(@"PAD", 11, 0xE6B56B),
+        MonoLabel(@"OPACITY", 11, 0x8FA3A8),
+        _opacitySlider,
+        _opacityValue,
+        MonoLabel(@"CAMERA STICK", 11, 0x8FA3A8),
+        _stickMode,
+        _hapticsButton,
+        _glowButton,
+        resetPad,
+    ]];
+    _settingsBar.axis = UILayoutConstraintAxisHorizontal;
+    _settingsBar.spacing = 10;
+    _settingsBar.alignment = UIStackViewAlignmentCenter;
+    _settingsBar.isLayoutMarginsRelativeArrangement = YES;
+    _settingsBar.layoutMargins = NSDirectionalEdgeInsetsMake(8, 12, 8, 12);
+    _settingsBar.backgroundColor =
+        [Ink(0x0A1418) colorWithAlphaComponent:.92];
+    _settingsBar.layer.cornerRadius = 8;
+    _settingsBar.layer.borderWidth = 1;
+    _settingsBar.layer.borderColor = Ink(0x1C2A30).CGColor;
+    [self.view addSubview:_settingsBar];
+    [NSLayoutConstraint activateConstraints:@[
+        [_settingsBar.centerXAnchor constraintEqualToAnchor:_canvas.centerXAnchor],
+        [_settingsBar.bottomAnchor constraintEqualToAnchor:_canvas.bottomAnchor
+            constant:-10],
+    ]];
+
+    // Camera-stick affordances drawn on the canvas (same geometry the game
+    // uses, via the shared RightStickGeometry helpers).
+    _fixedGhost = [UIView new];
+    _fixedGhost.userInteractionEnabled = NO;
+    _fixedGhost.backgroundColor = [UIColor colorWithWhite:1 alpha:.08];
+    _fixedGhost.layer.borderColor =
+        [UIColor colorWithWhite:1 alpha:.55].CGColor;
+    _fixedGhost.layer.borderWidth = 2.0;
+    [_canvas addSubview:_fixedGhost];
+    _floatingGhost = [UIView new];
+    _floatingGhost.userInteractionEnabled = NO;
+    _floatingGhost.backgroundColor = [UIColor clearColor];
+    _floatingGhost.layer.borderColor = PadAmberColor().CGColor;
+    _floatingGhost.layer.borderWidth = 2.0;
+    _floatingGhost.alpha = 0.35;
+    [_canvas addSubview:_floatingGhost];
+    _floatingHint = MonoLabel(@"TOUCH RIGHT SIDE = CAMERA", 11, 0xE6B56B);
+    _floatingHint.alpha = 0.6;
+    [_canvas addSubview:_floatingHint];
+    [self updateStickAffordances];
+    [self updateOpacityLabel];
+}
+- (void)updateOpacityLabel {
+    _opacityValue.text = [NSString stringWithFormat:@"%.0f%%",
+                          _opacitySlider.value * 100.0];
+}
+- (void)saveSettingsWithBlock:(void (^)(Theft4TouchLayoutSettings *))edit {
+    Theft4TouchLayoutSettings *s = [Theft4TouchLayout.shared.settings copyOfSelf];
+    edit(s);
+    // Live persistence: the in-game pad picks the change up immediately
+    // through the shared model notification.
+    [Theft4TouchLayout.shared saveSettings:s];
+}
+- (void)opacitySliderChanged:(UISlider *)slider {
+    [self saveSettingsWithBlock:^(Theft4TouchLayoutSettings *s) {
+        s.opacity = slider.value;
+    }];
+    [self updateOpacityLabel];
+}
+- (void)stickModeChanged:(UISegmentedControl *)seg {
+    [self saveSettingsWithBlock:^(Theft4TouchLayoutSettings *s) {
+        s.rightStickMode = (Theft4TouchRightStickMode)seg.selectedSegmentIndex;
+    }];
+}
+- (void)toggleHaptics:(UIButton *)button {
+    [self saveSettingsWithBlock:^(Theft4TouchLayoutSettings *s) {
+        s.hapticsEnabled = !s.hapticsEnabled;
+    }];
+    [self syncSettingsButtons];
+}
+- (void)toggleGlow:(UIButton *)button {
+    [self saveSettingsWithBlock:^(Theft4TouchLayoutSettings *s) {
+        s.pressAnimationEnabled = !s.pressAnimationEnabled;
+    }];
+    [self syncSettingsButtons];
+}
+- (void)syncSettingsButtons {
+    Theft4TouchLayoutSettings *s = Theft4TouchLayout.shared.settings;
+    [_hapticsButton setTitle:(s.hapticsEnabled ? @"HAPTICS: ON" : @"HAPTICS: OFF")
+        forState:UIControlStateNormal];
+    [_glowButton setTitle:(s.pressAnimationEnabled ? @"GLOW: ON" : @"GLOW: OFF")
+        forState:UIControlStateNormal];
+}
+// The shared model notification fires for both spec and settings changes;
+// refresh the canvas preview (opacity) and the stick affordances.
+- (void)settingsChanged {
+    [self updateControlFrames];
+    [self updateStickAffordances];
+}
+- (void)updateStickAffordances {
+    CGRect area = _canvas.bounds;
+    Theft4TouchRightStickMode mode =
+        Theft4TouchLayout.shared.settings.rightStickMode;
+    CGFloat d = [Theft4TouchLayout rightStickDiameterForArea:area];
+    _fixedGhost.hidden = (mode != Theft4TouchRightStickModeFixed);
+    _floatingGhost.hidden = (mode != Theft4TouchRightStickModeFloating);
+    _floatingHint.hidden = (mode != Theft4TouchRightStickModeFloating);
+    if (mode == Theft4TouchRightStickModeFixed) {
+        CGRect r = [Theft4TouchLayout fixedStickRectInArea:area];
+        _fixedGhost.frame = r;
+        _fixedGhost.layer.cornerRadius = d / 2.0;
+        _fixedGhost.alpha = 0.55;
+    } else if (mode == Theft4TouchRightStickModeFloating) {
+        CGPoint c = [Theft4TouchLayout floatingRestCenterInArea:area];
+        _floatingGhost.frame =
+            CGRectMake(c.x - d / 2.0, c.y - d / 2.0, d, d);
+        _floatingGhost.layer.cornerRadius = d / 2.0;
+        [_floatingHint sizeToFit];
+        CGFloat hx = MIN(c.x + d / 2.0 + 12, area.size.width - _floatingHint.bounds.size.width - 6);
+        CGFloat hy = MAX(4, c.y - _floatingHint.bounds.size.height / 2.0);
+        _floatingHint.frame = CGRectMake(hx, hy,
+            _floatingHint.bounds.size.width, _floatingHint.bounds.size.height);
+    }
+}
+- (void)confirmResetPadSettings {
+    UIAlertController *alert = [UIAlertController
+        alertControllerWithTitle:@"Reset Pad Settings?"
+            message:@"Restores the Touch Pad v2 defaults: opacity 45%, floating camera stick, haptics on, press glow on."
+        preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel"
+        style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Reset"
+        style:UIAlertActionStyleDestructive
+        handler:^(UIAlertAction *action) {
+            [Theft4TouchLayout.shared resetSettingsToDefaults];
+            Theft4TouchLayoutSettings *s = Theft4TouchLayout.shared.settings;
+            _opacitySlider.value = s.opacity;
+            _stickMode.selectedSegmentIndex = (NSInteger)s.rightStickMode;
+            [self updateOpacityLabel];
+            [self syncSettingsButtons];
+        }]];
+    [self presentViewController:alert animated:YES completion:nil];
 }
 
 - (void)panControl:(UIPanGestureRecognizer *)gesture {
@@ -302,4 +503,7 @@ static UIButton *BarButton(NSString *title, unsigned background, unsigned foregr
 }
 
 - (void)closeEditor { [self dismissViewControllerAnimated:YES completion:nil]; }
+- (void)dealloc {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
 @end
