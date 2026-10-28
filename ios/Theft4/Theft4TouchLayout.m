@@ -106,7 +106,7 @@ static const NSInteger kControlCount = 17;
 }
 
 + (NSString *)settingsPath {
-    return [[NSURL fileURLWithPath:NSHomeDirectory()]
+    return [[[NSURL fileURLWithPath:NSHomeDirectory()]
         URLByAppendingPathComponent:@"Library/Application Support/Theft4/touch_settings.json"]
         path];
 }
@@ -223,7 +223,7 @@ static const NSInteger kControlCount = 17;
         @"hapticsEnabled": @(_settings.hapticsEnabled),
         @"pressAnimationEnabled": @(_settings.pressAnimationEnabled),
     };
-    NSURL *dir = [[NSURL fileURLWithPath:[self.class settingsPath]] URLDeletingLastPathComponent];
+    NSURL *dir = [[NSURL fileURLWithPath:[self.class settingsPath]] deletingLastPathComponent];
     [[NSFileManager defaultManager] createDirectoryAtURL:dir
                               withIntermediateDirectories:YES
                                                attributes:nil
