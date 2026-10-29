@@ -86,8 +86,7 @@ static UIButton *BarButton(NSString *title, unsigned background, unsigned foregr
     UIButton *_hapticsButton;
     UIButton *_glowButton;
     UIView *_fixedGhost;
-    UIView *_floatingGhost;
-    UILabel *_floatingHint;
+    Theft4GhostView *_floatingGhost;
 }
 @end
 
@@ -151,7 +150,7 @@ static UIButton *BarButton(NSString *title, unsigned background, unsigned foregr
                name:Theft4TouchLayoutDidChangeNotification object:nil];
 
     UILabel *title = MonoLabel(@"TOUCH LAYOUT EDITOR", 12, 0xE6B56B);
-    UILabel *buildTag = MonoLabel(@"BUILD 153", 10, 0x5F7176);
+    UILabel *buildTag = MonoLabel(@"BUILD 154", 10, 0x5F7176);
     _closeButton = BarButton(@"CLOSE", 0x243236, 0xE5DECA, NO);
     _resetButton = BarButton(@"RESET", 0x243236, 0xE5DECA, NO);
     _saveButton = BarButton(@"SAVE", 0xE6B56B, 0x111B1D, YES);
@@ -191,6 +190,9 @@ static UIButton *BarButton(NSString *title, unsigned background, unsigned foregr
     [super viewDidLayoutSubviews];
     _canvas.frame = UIEdgeInsetsInsetRect(self.view.bounds, self.view.safeAreaInsets);
     [self updateControlFrames];
+    // The stick affordances depend on the canvas size, which only exists
+    // after the first layout pass.
+    [self updateStickAffordances];
 }
 
 // Positions a control the same way the in-game pad does.
@@ -211,10 +213,11 @@ static UIButton *BarButton(NSString *title, unsigned background, unsigned foregr
         label.layer.cornerRadius = (i == 0) ? label.bounds.size.width / 2
                                             : MIN(label.bounds.size.width, label.bounds.size.height) / 3;
         label.text = _draft[i].label;
-        // Same opacity-scaled styling as the in-game pad.
-        label.backgroundColor = [UIColor colorWithWhite:0 alpha:0.55 * op];
+        // Same opacity-scaled styling as the in-game pad (mockup: amber
+        // border, black fill).
+        label.backgroundColor = [UIColor colorWithWhite:0 alpha:0.45 * op];
         label.layer.borderColor =
-            [UIColor colorWithWhite:1 alpha:MIN(1.0, 1.22 * op)].CGColor;
+            [PadAmberColor() colorWithAlphaComponent:MIN(1.0, 0.9 * op)].CGColor;
     }
 }
 
@@ -226,7 +229,7 @@ static UIButton *BarButton(NSString *title, unsigned background, unsigned foregr
     _opacitySlider.maximumValue = 0.90;
     _opacitySlider.value = s.opacity;
     _opacitySlider.translatesAutoresizingMaskIntoConstraints = NO;
-    [_opacitySlider.widthAnchor constraintEqualToConstant:160].active = YES;
+    [_opacitySlider.widthAnchor constraintEqualToConstant:140].active = YES;
     [_opacitySlider addTarget:self action:@selector(opacitySliderChanged:)
         forControlEvents:UIControlEventValueChanged];
     _opacityValue = MonoLabel(@"", 11, 0xE5DECA);
@@ -235,7 +238,7 @@ static UIButton *BarButton(NSString *title, unsigned background, unsigned foregr
         initWithItems:@[@"FLOAT", @"FIXED", @"OFF"]];
     _stickMode.selectedSegmentIndex = (NSInteger)s.rightStickMode;
     _stickMode.translatesAutoresizingMaskIntoConstraints = NO;
-    [_stickMode.widthAnchor constraintEqualToConstant:210].active = YES;
+    [_stickMode.widthAnchor constraintEqualToConstant:190].active = YES;
     [_stickMode addTarget:self action:@selector(stickModeChanged:)
         forControlEvents:UIControlEventValueChanged];
 
@@ -253,20 +256,32 @@ static UIButton *BarButton(NSString *title, unsigned background, unsigned foregr
     [resetPad addTarget:self action:@selector(confirmResetPadSettings)
         forControlEvents:UIControlEventTouchUpInside];
 
-    _settingsBar = [[UIStackView alloc] initWithArrangedSubviews:@[
+    // Two rows so the bar always fits the native landscape width (the
+    // single-row v2 bar overflowed the foldable display and Auto Layout
+    // mis-placed it over the title).
+    UIStackView *row1 = [[UIStackView alloc] initWithArrangedSubviews:@[
         MonoLabel(@"PAD", 11, 0xE6B56B),
         MonoLabel(@"OPACITY", 11, 0x8FA3A8),
         _opacitySlider,
         _opacityValue,
+    ]];
+    row1.axis = UILayoutConstraintAxisHorizontal;
+    row1.spacing = 10;
+    row1.alignment = UIStackViewAlignmentCenter;
+    UIStackView *row2 = [[UIStackView alloc] initWithArrangedSubviews:@[
         MonoLabel(@"CAMERA STICK", 11, 0x8FA3A8),
         _stickMode,
         _hapticsButton,
         _glowButton,
         resetPad,
     ]];
-    _settingsBar.axis = UILayoutConstraintAxisHorizontal;
-    _settingsBar.spacing = 10;
-    _settingsBar.alignment = UIStackViewAlignmentCenter;
+    row2.axis = UILayoutConstraintAxisHorizontal;
+    row2.spacing = 10;
+    row2.alignment = UIStackViewAlignmentCenter;
+    _settingsBar = [[UIStackView alloc] initWithArrangedSubviews:@[row1, row2]];
+    _settingsBar.axis = UILayoutConstraintAxisVertical;
+    _settingsBar.spacing = 8;
+    _settingsBar.translatesAutoresizingMaskIntoConstraints = NO;
     _settingsBar.layoutMarginsRelativeArrangement = YES;
     _settingsBar.layoutMargins = UIEdgeInsetsMake(8, 12, 8, 12);
     _settingsBar.backgroundColor =
@@ -279,6 +294,8 @@ static UIButton *BarButton(NSString *title, unsigned background, unsigned foregr
         [_settingsBar.centerXAnchor constraintEqualToAnchor:_canvas.centerXAnchor],
         [_settingsBar.bottomAnchor constraintEqualToAnchor:_canvas.bottomAnchor
             constant:-10],
+        [_settingsBar.widthAnchor constraintLessThanOrEqualToAnchor:
+            _canvas.widthAnchor constant:-24],
     ]];
 
     // Camera-stick affordances drawn on the canvas (same geometry the game
@@ -290,16 +307,14 @@ static UIButton *BarButton(NSString *title, unsigned background, unsigned foregr
         [UIColor colorWithWhite:1 alpha:.55].CGColor;
     _fixedGhost.layer.borderWidth = 2.0;
     [_canvas addSubview:_fixedGhost];
-    _floatingGhost = [UIView new];
+    // Dashed "R-STICK" ghost (mockup hint de repouso) — the text lives
+    // inside the circle, so there is no free-floating label to overlap.
+    _floatingGhost = [Theft4GhostView new];
+    _floatingGhost.title = @"R-STICK";
+    _floatingGhost.ringColor = [UIColor colorWithWhite:1 alpha:.55];
+    _floatingGhost.alpha = 0.55;
     _floatingGhost.userInteractionEnabled = NO;
-    _floatingGhost.backgroundColor = [UIColor clearColor];
-    _floatingGhost.layer.borderColor = PadAmberColor().CGColor;
-    _floatingGhost.layer.borderWidth = 2.0;
-    _floatingGhost.alpha = 0.35;
     [_canvas addSubview:_floatingGhost];
-    _floatingHint = MonoLabel(@"TOUCH RIGHT SIDE = CAMERA", 11, 0xE6B56B);
-    _floatingHint.alpha = 0.6;
-    [_canvas addSubview:_floatingHint];
     [self updateStickAffordances];
     [self updateOpacityLabel];
 }
@@ -352,12 +367,12 @@ static UIButton *BarButton(NSString *title, unsigned background, unsigned foregr
 }
 - (void)updateStickAffordances {
     CGRect area = _canvas.bounds;
+    if (area.size.width < 10) return; // not laid out yet
     Theft4TouchRightStickMode mode =
         Theft4TouchLayout.shared.settings.rightStickMode;
     CGFloat d = [Theft4TouchLayout rightStickDiameterForArea:area];
     _fixedGhost.hidden = (mode != Theft4TouchRightStickModeFixed);
     _floatingGhost.hidden = (mode != Theft4TouchRightStickModeFloating);
-    _floatingHint.hidden = (mode != Theft4TouchRightStickModeFloating);
     if (mode == Theft4TouchRightStickModeFixed) {
         CGRect r = [Theft4TouchLayout fixedStickRectInArea:area];
         _fixedGhost.frame = r;
@@ -367,12 +382,7 @@ static UIButton *BarButton(NSString *title, unsigned background, unsigned foregr
         CGPoint c = [Theft4TouchLayout floatingRestCenterInArea:area];
         _floatingGhost.frame =
             CGRectMake(c.x - d / 2.0, c.y - d / 2.0, d, d);
-        _floatingGhost.layer.cornerRadius = d / 2.0;
-        [_floatingHint sizeToFit];
-        CGFloat hx = MIN(c.x + d / 2.0 + 12, area.size.width - _floatingHint.bounds.size.width - 6);
-        CGFloat hy = MAX(4, c.y - _floatingHint.bounds.size.height / 2.0);
-        _floatingHint.frame = CGRectMake(hx, hy,
-            _floatingHint.bounds.size.width, _floatingHint.bounds.size.height);
+        [_floatingGhost setNeedsDisplay];
     }
 }
 - (void)confirmResetPadSettings {
