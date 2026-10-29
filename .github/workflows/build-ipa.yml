@@ -146,8 +146,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: out/build/ios-device-release
-          key: ipa-build-155-${{ github.sha }}
+          key: ipa-build-156-${{ github.sha }}
           restore-keys: |
+            ipa-build-156-
             ipa-build-155-
             ipa-build-153-
 
@@ -205,12 +206,12 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: out/build/ios-device-release
-          key: ipa-build-155-${{ github.sha }}
+          key: ipa-build-156-${{ github.sha }}
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: Theft4-0.3.2-155-touch-layout-ipa
+          name: Theft4-0.3.2-156-touch-layout-ipa
           path: |
             dist/*.ipa
             dist/sha256sums.txt
