@@ -257,3 +257,32 @@ static const NSInteger kControlCount = 17;
     return CGRectMake(center.x - d / 2.0, center.y - d / 2.0, d, d);
 }
 @end
+
+@implementation Theft4GhostView
+- (instancetype)init { return [self initWithFrame:CGRectZero]; }
+- (instancetype)initWithFrame:(CGRect)frame {
+    if ((self = [super initWithFrame:frame])) {
+        _title = @"";
+        _ringColor = [UIColor colorWithWhite:1 alpha:.55];
+    }
+    return self;
+}
+- (void)drawRect:(CGRect)rect {
+    UIBezierPath *path =
+        [UIBezierPath bezierPathWithOvalInRect:CGRectInset(rect, 1.5, 1.5)];
+    path.lineWidth = 2;
+    path.lineDashPattern = @[@5, @5];
+    [self.ringColor setStroke];
+    [path stroke];
+    NSDictionary *attrs = @{
+        NSFontAttributeName:
+            [UIFont monospacedSystemFontOfSize:11 weight:UIFontWeightSemibold],
+        NSForegroundColorAttributeName: self.ringColor,
+    };
+    CGSize size = [self.title sizeWithAttributes:attrs];
+    [self.title
+        drawAtPoint:CGPointMake((rect.size.width - size.width) / 2.0,
+                                (rect.size.height - size.height) / 2.0)
+      withAttributes:attrs];
+}
+@end
