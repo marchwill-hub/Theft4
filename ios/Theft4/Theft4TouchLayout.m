@@ -271,7 +271,8 @@ static const NSInteger kControlCount = 17;
     UIBezierPath *path =
         [UIBezierPath bezierPathWithOvalInRect:CGRectInset(rect, 1.5, 1.5)];
     path.lineWidth = 2;
-    path.lineDashPattern = @[@5, @5];
+    CGFloat dash[] = {5.0f, 5.0f};
+    [path setLineDash:dash count:2 offset:0];
     [self.ringColor setStroke];
     [path stroke];
     NSDictionary *attrs = @{
