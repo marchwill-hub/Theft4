@@ -1,8 +1,16 @@
 #import <Foundation/Foundation.h>
-#import <CoreGraphics/CoreGraphics.h>
+#import <UIKit/UIKit.h>
 
 // Posted (main thread) whenever the shared touch layout model changes.
 FOUNDATION_EXPORT NSNotificationName const Theft4TouchLayoutDidChangeNotification;
+
+// Dashed rest-position circle with a centered label (the mockup's "hint de
+// repouso"). Shared by the in-game pad and the layout editor so both draw
+// the stick affordance identically.
+@interface Theft4GhostView : UIView
+@property(nonatomic, copy) NSString *title;
+@property(nonatomic, strong) UIColor *ringColor;
+@end
 
 // User-adjustable touch pad layout. Positions are normalized (0..1) against
 // the game window's landscape safe area, exactly like the built-in pad table.
