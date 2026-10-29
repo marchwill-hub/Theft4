@@ -271,8 +271,10 @@ static const NSInteger kControlCount = 17;
     UIBezierPath *path =
         [UIBezierPath bezierPathWithOvalInRect:CGRectInset(rect, 1.5, 1.5)];
     path.lineWidth = 2;
+    // UIBezierPath has no dash-pattern API; stroke uses the current
+    // CGContext's line-dash state.
     CGFloat dash[] = {5.0f, 5.0f};
-    [path setLineDash:dash count:2 offset:0];
+    CGContextSetLineDash(UIGraphicsGetCurrentContext(), 0.0f, dash, 2);
     [self.ringColor setStroke];
     [path stroke];
     NSDictionary *attrs = @{
