@@ -56,6 +56,13 @@ static inline UIColor *CameraStickColor(BOOL steering) {
     return steering ? PadAmber() : [UIColor colorWithWhite:1 alpha:.55];
 }
 
+// CGRect has no `center` member in Objective-C (it is a Swift overlay
+// convenience) — explicit midpoint.
+static inline CGPoint RectCenter(CGRect r) {
+    return CGPointMake(r.origin.x + r.size.width / 2.0,
+                       r.origin.y + r.size.height / 2.0);
+}
+
 @interface Theft4TouchControls () {
     NSMutableArray<UILabel *> *_labels;
     NSMutableArray<UIView *> *_glows;
@@ -292,9 +299,9 @@ static inline UIColor *CameraStickColor(BOOL steering) {
             _floatMaxTravel = MAX(_floatMaxTravel,
                                   hypot(p.x - _floatOrigin.x, p.y - _floatOrigin.y));
         } else if (capture.integerValue == kCaptureFixedStick) {
+            CGPoint fc = RectCenter(_fixedStickRect);
             _fixedMaxTravel = MAX(_fixedMaxTravel,
-                                  hypot(p.x - _fixedStickRect.center.x,
-                                        p.y - _fixedStickRect.center.y));
+                                  hypot(p.x - fc.x, p.y - fc.y));
         }
     }
     [self publishButtonsAndMovement];
@@ -406,7 +413,7 @@ static inline UIColor *CameraStickColor(BOOL steering) {
         if (kind != kCaptureFloatStick && kind != kCaptureFixedStick) continue;
         CGPoint p = [touch locationInView:self];
         CGPoint origin = kind == kCaptureFloatStick
-            ? _floatOrigin : _fixedStickRect.center;
+            ? _floatOrigin : RectCenter(_fixedStickRect);
         CGFloat d = [Theft4TouchLayout rightStickDiameterForArea:
             UIEdgeInsetsInsetRect(self.bounds, self.safeAreaInsets)];
         CGFloat radius = MAX(1, d / 2.0);
@@ -522,12 +529,12 @@ static inline UIColor *CameraStickColor(BOOL steering) {
     CGRect area = UIEdgeInsetsInsetRect(self.bounds, self.safeAreaInsets);
     if (_stickMode == Theft4TouchRightStickModeFixed) {
         // The permanent circle stays; only the knob animates back to center.
-        _rightBase.center = _fixedStickRect.center;
+        _rightBase.center = RectCenter(_fixedStickRect);
         _rightBase.layer.borderColor =
             CameraStickColor(_driveContext && !_aimContext).CGColor;
         _rightBase.alpha = 0.55;
         [UIView animateWithDuration:0.12 animations:^{
-            _rightKnob.center = _fixedStickRect.center;
+            _rightKnob.center = RectCenter(_fixedStickRect);
             _rightKnob.alpha = 0.55;
         }];
         return;
@@ -577,8 +584,8 @@ static inline UIColor *CameraStickColor(BOOL steering) {
     _rightBase.hidden = NO;
     if (_stickMode == Theft4TouchRightStickModeFixed) {
         _rightKnob.hidden = NO;
-        _rightBase.center = _fixedStickRect.center;
-        _rightKnob.center = _fixedStickRect.center;
+        _rightBase.center = RectCenter(_fixedStickRect);
+        _rightKnob.center = RectCenter(_fixedStickRect);
         _rightBase.alpha = 0.55;
         _rightKnob.alpha = 0.55;
         return;
